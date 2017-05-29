@@ -76,7 +76,7 @@ public class GAPopulation implements Cloneable {
     }
     
     public void selectParents() {
-      GAPopulation tournament = new GAPopulation();
+      /*GAPopulation tournament = new GAPopulation();
       tournament.setPopulationSize(2);
       tournament.individuals = new GAIndividual[2];
       tournament.individuals[0] = new GAIndividual();
@@ -85,7 +85,7 @@ public class GAPopulation implements Cloneable {
       
       tournament.individuals[1] = new GAIndividual();
       int INDEX2 = rand.nextInt(popSize);
-      tournament.individuals[1] = this.getIndividual(INDEX2);
+      tournament.individuals[1] = this.getIndividual(INDEX2);*/
     }
     
     @Override

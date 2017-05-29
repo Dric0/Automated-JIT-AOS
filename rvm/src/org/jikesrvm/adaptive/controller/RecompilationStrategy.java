@@ -172,7 +172,7 @@ public abstract class RecompilationStrategy {
         // Population we use at this new node:
         pop = tuple.getNode().getPopulation().clone(); // Population copied.
         
-        // TODO - Selec two individuals from the cloned pop.
+        // TODO - Select two individuals from the cloned pop.
         
         //tree.getGARoot().setLeftChild(tuple.getNode());
         tree.addChild(individual, pop); // TODO - Parameters not right. Need yet to generate new individual and pop.
