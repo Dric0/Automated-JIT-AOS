@@ -174,6 +174,8 @@ public abstract class RecompilationStrategy {
         
         // TODO - Select two individuals from the cloned pop.
         
+        // Testing git stuff
+        
         //tree.getGARoot().setLeftChild(tuple.getNode());
         tree.addChild(individual, pop); // TODO - Parameters not right. Need yet to generate new individual and pop.
         
