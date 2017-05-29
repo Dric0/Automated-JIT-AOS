@@ -12,6 +12,7 @@
  */
 package org.jikesrvm.adaptive.controller;
 
+import java.util.Random;
 import org.jikesrvm.VM;
 import org.jikesrvm.adaptive.recompilation.CompilerDNA;
 import org.jikesrvm.adaptive.util.AOSLogging;
@@ -60,6 +61,42 @@ public abstract class RecompilationStrategy {
    * This helper method creates a ControllerPlan, which contains a
    * CompilationPlan, for the passed method using the passed optimization
    * level and instrumentation plan.
+   * 
+   * Dric0 - Method overloading to suit GA needs
+   *
+   * @param method the RVMMethod for the plan
+   * @param optLevel the optimization level to use in the plan
+   * @param instPlan the instrumentation plan to use
+   * @param prevCMID the previous compiled method ID
+   * @param expectedSpeedup  expected speedup from this recompilation
+   * @param expectedCompilationTime expected time for compilation
+   *  and execution of the new method
+   * @param priority a measure of the oveall benefit we expect to see
+   *                 by executing this plan.
+   * @return the compilation plan to be used
+   */
+  ControllerPlan createControllerPlan(RVMMethod method, int optLevel, InstrumentationPlan instPlan, int prevCMID,
+                                         double expectedSpeedup, double expectedCompilationTime, 
+                                         double priority, HotMethodEvent hme) throws CloneNotSupportedException {
+
+    // Construct the compilation plan (varies depending on strategy)
+    //CompilationPlan compPlan = createCompilationPlan((NormalMethod) method, optLevel, instPlan);
+    CompilationPlan compPlan = GAcreateCompilationPlan((NormalMethod) method, method.getId(), optLevel, instPlan, hme);
+    System.out.println("Method's id: " + method.getId());
+    
+    // Create the controller plan
+    return new ControllerPlan(compPlan,
+                                 Controller.controllerClock,
+                                 prevCMID,
+                                 expectedSpeedup,
+                                 expectedCompilationTime,
+                                 priority);
+  }
+  
+  /**
+   * This helper method creates a ControllerPlan, which contains a
+   * CompilationPlan, for the passed method using the passed optimization
+   * level and instrumentation plan.
    *
    * @param method the RVMMethod for the plan
    * @param optLevel the optimization level to use in the plan
@@ -77,7 +114,9 @@ public abstract class RecompilationStrategy {
 
     // Construct the compilation plan (varies depending on strategy)
     CompilationPlan compPlan = createCompilationPlan((NormalMethod) method, optLevel, instPlan);
-
+    //CompilationPlan compPlan = GAcreateCompilationPlan((NormalMethod) method, method.getId(), optLevel, instPlan, hme);
+    //System.out.println("Method's id: " + method.getId());
+    
     // Create the controller plan
     return new ControllerPlan(compPlan,
                                  Controller.controllerClock,
@@ -87,6 +126,113 @@ public abstract class RecompilationStrategy {
                                  priority);
   }
 
+  //public int POPULATION_SIZE = 50;
+  
+  public CompilationPlan GAcreateCompilationPlan(NormalMethod method, int methodId, int optLevel,
+                                                   InstrumentationPlan instPlan, HotMethodEvent hme) throws CloneNotSupportedException {
+    System.out.println("GAcreateCompilationPlan() - Probably in here SPEA2 will run\nCalling GAcreatePopulation().");
+    //GAcreatePopulation(POPULATION_SIZE);
+    
+    // Dric0 - Vou tentar gerar aqui (utilizando o SPEA2) novos valores para _options
+    //GAPopulation population = GAPopulation.getInstance();
+    //OptOptions[] _opt = population.getFittest().getGAOptions();
+    
+    GAHash map = GAHash.getInstance();
+    double recentSample = hme.getNumSamples();
+    
+    GATree tree = GATree.getInstance();
+    if (!map.checkExistence(methodId)) {
+      // No entries on the hash.
+      //System.out.println("No entries on the hash.");
+      GAIndividual individual = tree.getGARoot().getDNA();
+      map.add(methodId, recentSample, tree.getGARoot());     // This "recentSample" represents the value already executed.
+    } else {
+      // Already on the hash map.
+      //System.out.println("Already on the hash map.");
+      GAWrapper tuple = map.getValues(methodId);
+      //GAIndividual individual = map.getIndividual(methodId);
+      //double previousSample = map.getSamples(methodId);
+      GAIndividual individual = tuple.getNode().getDNA();
+      double previousSample = tuple.getSamples();
+      individual.setFitness(previousSample);
+      
+      GAPopulation pop = new GAPopulation();
+      
+      
+      //if (individual == tree.getGARoot().getDNA()) {
+      if (tuple.getNode() == tree.getGARoot()) {
+        // It is the root -> Breadth search for new node OR create new one in case none is found.
+        
+        if (tree.getGARoot().getLeftChild() == null) { // No childs - no need for search, just create new node and set leftChild.
+        
+        // To generate new node -> Select two individuals from pop (using its probability)
+        //                      -> Crossover them and check if mutate or not
+        //                      -> Replace one of the parents with the new node
+        
+        // Population we use at this new node:
+        pop = tuple.getNode().getPopulation().clone(); // Population copied.
+        
+        // TODO - Selec two individuals from the cloned pop.
+        
+        //tree.getGARoot().setLeftChild(tuple.getNode());
+        tree.addChild(individual, pop); // TODO - Parameters not right. Need yet to generate new individual and pop.
+        
+        }
+        
+      } else { // The node is not the root.
+        
+      }
+      
+      //tuple.getIndividual().setFitness(tuple.getSamples());
+      map.add(methodId, recentSample, tuple.getNode()); // TODO - Need to add poiting to new node.
+    }
+    
+    
+    /*System.out.println("Retrived map.");
+    if (!map.checkExistence(methodId)) {
+      System.out.println("No key inside map.");
+    }*/
+    GAWrapper tuple = map.getValues(methodId);
+    System.out.println("Retrieving tuple from map. Samples: " + tuple.getSamples());
+    GAIndividual individual = tuple.getNode().getDNA();
+    OptOptions[] _opt = individual.getGAOptions();
+    //map.add2(optLevel, optLevel, individual);
+    
+    //System.out.println("_options[optLevel]: " + _options[optLevel]);
+    // Construct a plan from the basic pre-computed opt-levels
+    //return new CompilationPlan(method, _optPlans[optLevel], null, _options[optLevel]);
+    return new CompilationPlan(method, _optPlans[optLevel], null, _opt[optLevel]);
+  }
+  
+  //protected Random rand = new Random();
+  
+  /*public int getRandomOpt() {
+    //rand = new Random();
+    // Only 16 boolean Opt selected so far.
+    return rand.nextInt(16);
+  }*/
+  
+  /*public void GAcreatePopulation(int populationSize) {
+    System.out.println("Inside GAcreatePopulation");
+    GAIndividual[] individuals;
+    individuals = new GAIndividual[populationSize];
+    
+    OptOptions[] GAOptions = _options;
+    
+    for (int i = 0; i < POPULATION_SIZE; i++) {
+      int INDEX = getRandomOpt();
+      //System.out.println("TESTE: " + INDEX);
+      System.out.println("Individuals[" + i + "]. <------------");
+      individuals[i] = new GAIndividual();
+      individuals[i].createIndividual(GAOptions, INDEX);
+    }
+    
+    int maxOptLevel = getMaxOptLevel();
+    for (int i = 0; i <= maxOptLevel; i++) {
+      //System.out.println("GAOptions: " + GAOptions[i]);
+    }
+  }*/
+  
   /**
    * Constructs a compilation plan that will compile the given method
    * with instrumentation.
@@ -98,7 +244,8 @@ public abstract class RecompilationStrategy {
    */
   public CompilationPlan createCompilationPlan(NormalMethod method, int optLevel,
                                                    InstrumentationPlan instPlan) {
-
+    System.out.println("Inside RecompilationStrategy.java - createCompilationPlan() - Calling the GA version.");
+    //GAcreateCompilationPlan(method, optLevel, instPlan);
     // Construct a plan from the basic pre-computed opt-levels
     return new CompilationPlan(method, _optPlans[optLevel], null, _options[optLevel]);
   }
@@ -228,8 +375,8 @@ public abstract class RecompilationStrategy {
     return Controller.options.DERIVED_MAX_OPT_LEVEL;
   }
 
-  private OptimizationPlanElement[][] _optPlans;
-  private OptOptions[] _options;
+  protected OptimizationPlanElement[][] _optPlans;
+  protected OptOptions[] _options;
 
   /**
    * Creates the default set of &lt;optimization plan, options&gt; pairs.

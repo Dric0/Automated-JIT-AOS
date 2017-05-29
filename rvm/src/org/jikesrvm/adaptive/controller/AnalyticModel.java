@@ -146,7 +146,8 @@ abstract class AnalyticModel extends RecompilationStrategy {
       plan = null;
     } else {
       plan =
-          bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost);
+          //bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost);
+          bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost, hme);
     }
     return plan;
   }

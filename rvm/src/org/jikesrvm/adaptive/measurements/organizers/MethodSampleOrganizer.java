@@ -14,6 +14,10 @@ package org.jikesrvm.adaptive.measurements.organizers;
 
 import org.jikesrvm.VM;
 import org.jikesrvm.adaptive.controller.Controller;
+import org.jikesrvm.adaptive.controller.GAHash;
+import org.jikesrvm.adaptive.controller.GAIndividual;
+import org.jikesrvm.adaptive.controller.GATree;
+import org.jikesrvm.adaptive.controller.GAWrapper;
 import org.jikesrvm.adaptive.controller.HotMethodRecompilationEvent;
 import org.jikesrvm.adaptive.measurements.RuntimeMeasurements;
 import org.jikesrvm.adaptive.measurements.listeners.MethodListener;
@@ -81,9 +85,21 @@ public final class MethodSampleOrganizer extends Organizer {
 
     int numSamples = ((MethodListener) listener).getNumSamples();
     int[] samples = ((MethodListener) listener).getSamples();
+    //System.out.println("numSamples collected by MethodListener: " + numSamples);
 
     // (1) Update the global (cumulative) sample data
     Controller.methodSamples.update(samples, numSamples);
+    
+    int counter = 0;
+    for (int j = 0; j < numSamples; j++) {
+      for (int i = 1; i < numSamples; i++) {
+        if (samples[j] == samples[i]) {
+          counter++;
+        }
+      }
+      System.out.println("Number of equal CMID(" + samples[j] + "): " + counter);
+      counter = 0;
+    }
 
     // (2) Remove duplicates from samples buffer.
     //     NOTE: This is a dirty trick and may be ill-advised.
@@ -118,10 +134,56 @@ public final class MethodSampleOrganizer extends Organizer {
               (compilerType == CompiledMethod.OPT &&
                (((OptCompiledMethod) cm).getOptLevel() >= filterOptLevel)))) {
           HotMethodRecompilationEvent event = new HotMethodRecompilationEvent(cm, ns);
+          
+          // Dric0 - Inserting values into hash.
+          /*GAHash map = GAHash.getInstance();
+          int methodId = cm.method.getId();
+          
+          GATree tree = GATree.getInstance();
+          if (!map.checkExistence(methodId)) {
+            // No entries on the hash
+            GAIndividual individual = tree.getGARoot();
+            map.add(methodId, ns, individual);     // This "ns" represents the value already executed.
+          } else {
+            // Already on the hash map.
+            GAWrapper tuple = map.getValues(methodId);
+            //GAIndividual individual = map.getIndividual(methodId);
+            //double previousSample = map.getSamples(methodId);
+            GAIndividual individual = tuple.getIndividual();
+            double previousSample = tuple.getSamples();
+            individual.setFitness(previousSample);
+            //tuple.getIndividual().setFitness(tuple.getSamples());
+            map.add(methodId, ns, individual);
+          }*/
+          
+          //GAWrapper tuple;
+          /*double currentFitness = map.checkExistence(methodId);
+          if (currentFitness != -1) {
+            calculateFitness(ns, currentFitness);
+          }
+          try {
+            map.add(methodId, ns);
+            //map.add2(methodId, ns, individual);
+          } catch (NullPointerException ex) {
+            System.out.println("Some of the arguments is/are Null.");
+          }*/
+          //event.setIndividual(gai);
+          //map.add(methodId, ns);
+          //System.out.println("Inside MethodSampleOraganizer - thresholdReached() - " + cm.getId() + " method has " + event.getNumSamples() + " numSamples");
+          //map.print();
           Controller.controllerInputQueue.insert(ns, event);
           AOSLogging.logger.controllerNotifiedForHotness(cm, ns);
         }
       }
     }
+  }
+  
+  public double calculateFitness(double numSamples, double currentFitness) {
+    int maxSamples = Controller.options.METHOD_SAMPLE_SIZE * RVMThread.availableProcessors;
+    double newFitness = numSamples/maxSamples;
+    if (currentFitness > newFitness) {  // newFitness is better than the older (faster execution time)
+      return newFitness;
+    }
+    return currentFitness;
   }
 }

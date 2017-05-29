@@ -61,6 +61,10 @@ import org.vmmagic.pragma.Pure;
  * as they appear in the method summary list of Sun's 1.4 Javadoc API.
  */
 public final class Class<T> implements Serializable, Type, AnnotatedElement, GenericDeclaration {
+
+    public void GAcreateCompilationPlan() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
   private static final class StaticData {
     static final ProtectionDomain unknownProtectionDomain;
 

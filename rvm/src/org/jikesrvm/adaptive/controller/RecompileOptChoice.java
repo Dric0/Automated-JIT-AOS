@@ -60,7 +60,7 @@ class RecompileOptChoice extends RecompilationChoice {
    */
   @Override
   ControllerPlan makeControllerPlan(CompiledMethod cmpMethod, int prevCompiler, double prevTimeForMethod,
-                                       double bestActionTime, double expectedCompilationTime) {
+                                       double bestActionTime, double expectedCompilationTime, HotMethodEvent hme) {
     double speedup = CompilerDNA.getBenefitRatio(prevCompiler, getCompiler());
     double priority = prevTimeForMethod - bestActionTime;
     return Controller.recompilationStrategy.
@@ -70,7 +70,8 @@ class RecompileOptChoice extends RecompilationChoice {
                              cmpMethod.getId(),
                              speedup,
                              expectedCompilationTime,
-                             priority);
+                             priority,
+                             hme);
   }
 
   /**

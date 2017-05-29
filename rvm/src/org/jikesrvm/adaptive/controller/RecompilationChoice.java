@@ -53,8 +53,10 @@ abstract class RecompilationChoice {
    * @param bestCost The estimated compilation cost implementing this choice
    * @return The controller plan implementing this recompilation choice
    */
+  //abstract ControllerPlan makeControllerPlan(CompiledMethod cmpMethod, int prevCompiler, double prevTimeFormethod,
+                                                //double bestActionTime, double bestCost);
   abstract ControllerPlan makeControllerPlan(CompiledMethod cmpMethod, int prevCompiler, double prevTimeFormethod,
-                                                double bestActionTime, double bestCost);
+                                                double bestActionTime, double bestCost, HotMethodEvent hme);
 
 }
 

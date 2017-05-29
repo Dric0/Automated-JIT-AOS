@@ -127,11 +127,22 @@ public class OptimizationPlanner {
     }
 
     ArrayList<OptimizationPlanElement> temp = new ArrayList<OptimizationPlanElement>();
+    //System.out.println("Current opt level: " + options.getOptLevel());
+    //System.out.println("Elements on masterPlan -Begin\t---------------------------");
+    //int nMaster = 0;
+    //int nOpt = 0;
     for (OptimizationPlanElement element : masterPlan) {
+      //nMaster++;  
+      //System.out.println("element.getName on masterPlan: " + element.getName());
       if (element.shouldPerform(options)) {
         temp.add(element);
+        //nOpt++;
+        //System.out.println("element.getName() that shouldPerform: " + element.getName());
       }
     }
+    //System.out.println("Elements on masterPlan -End\t---------------------------");
+    //System.out.println("Number of Elements on masterPlan: " + nMaster);
+    //System.out.println("Number of Elements added to the opt plan: " + nOpt);
     if (VM.writingBootImage) {
       masterPlan = null;  // avoid problems with classes not being in bootimage.
     }

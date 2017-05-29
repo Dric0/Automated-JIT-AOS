@@ -13,6 +13,7 @@
 package org.jikesrvm.adaptive.controller;
 
 import java.util.Enumeration;
+import java.util.Random;
 import org.jikesrvm.VM;
 import org.jikesrvm.adaptive.OnStackReplacementEvent;
 import org.jikesrvm.adaptive.OSROrganizerThread;
@@ -34,6 +35,8 @@ import org.jikesrvm.adaptive.util.AOSOptions;
 import org.jikesrvm.scheduler.SoftLatch;
 import org.jikesrvm.scheduler.SystemThread;
 import org.vmmagic.pragma.NonMoving;
+import org.jikesrvm.compilers.opt.util.Tree;
+import org.jikesrvm.compilers.opt.util.TreeNode;
 
 /**
  * This class implements the controller thread.  This entity is the brains of
@@ -59,6 +62,8 @@ public final class ControllerThread extends SystemThread {
     this.sentinel = sentinel;
   }
 
+  private final Random RAND = new Random();
+  
   private final SoftLatch sentinel;
 
   /**
@@ -151,6 +156,23 @@ public final class ControllerThread extends SystemThread {
     }
 
     controllerInitDone();
+    
+    // Dric0 - Initialize de SPEA2 (and its tree) here?
+    System.out.println("Inside AnalyticModel.java - considerHotMethod(). Creating initial population");
+    int POPULATION_SIZE = 50;
+    GAPopulation population = GAPopulation.getInstance();
+    population.setRandom(RAND);
+    population.setPopulationSize(POPULATION_SIZE);
+    population.initPopulation();
+    
+    //GATreeNode node = new GATreeNode(population.getTreeRoot());
+    //GATree GATree = new GATree(population.getTreeRoot());
+    GATree tree = GATree.getInstance();
+    tree.setGARoot(population.getDefaultOptOptions(), population);
+    //tree.setGARoot(population.getTreeRoot());
+    
+    GAHash map = GAHash.getInstance();
+    map.init();
 
     // Enter main controller loop.
     // Pull an event to process off of
@@ -164,6 +186,7 @@ public final class ControllerThread extends SystemThread {
       }
       Object event = Controller.controllerInputQueue.deleteMin();
       ((ControllerInputEvent) event).process();
+      // Dric0 - Event done? Method recompiled?
     }
   }
 

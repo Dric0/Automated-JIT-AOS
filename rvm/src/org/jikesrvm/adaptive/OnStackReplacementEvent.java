@@ -78,6 +78,8 @@ public final class OnStackReplacementEvent implements ControllerInputEvent {
       optimizationPlan = (OptimizationPlanElement[]) RuntimeCompiler.optimizationPlan;
     }
 
+    //System.out.println("Inside OnStackReplacementEvent.java - This is where the SPEA2 should generate de optOptions parameters.");
+    
     CompilationPlan compPlan = new CompilationPlan(todoMethod, optimizationPlan, null, options);
 
     OnStackReplacementPlan plan =
