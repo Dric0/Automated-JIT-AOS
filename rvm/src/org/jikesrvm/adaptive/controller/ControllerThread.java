@@ -32,6 +32,7 @@ import org.jikesrvm.adaptive.util.AOSExternalOptions;
 import org.jikesrvm.adaptive.util.AOSGenerator;
 import org.jikesrvm.adaptive.util.AOSLogging;
 import org.jikesrvm.adaptive.util.AOSOptions;
+import org.jikesrvm.compilers.opt.util.Randomizer;
 import org.jikesrvm.scheduler.SoftLatch;
 import org.jikesrvm.scheduler.SystemThread;
 import org.vmmagic.pragma.NonMoving;
@@ -63,6 +64,10 @@ public final class ControllerThread extends SystemThread {
   }
 
   private final Random RAND = new Random();
+  
+  /*public Random getRandom() {
+    return RAND;
+  }*/
   
   private final SoftLatch sentinel;
 
@@ -158,18 +163,33 @@ public final class ControllerThread extends SystemThread {
     controllerInitDone();
     
     // Dric0 - Initialize de SPEA2 (and its tree) here?
-    System.out.println("Inside AnalyticModel.java - considerHotMethod(). Creating initial population");
+    System.out.println("Inside ControllerThread.java -> Creating initial population");
     int POPULATION_SIZE = 50;
-    GAPopulation population = GAPopulation.getInstance();
-    population.setRandom(RAND);
-    population.setPopulationSize(POPULATION_SIZE);
-    population.initPopulation();
+    //GAPopulation population = GAPopulation.getInstance();
+    Randomizer randomUtil = Randomizer.getInstance();
+    randomUtil.setRandom(RAND);
+    //population.setRandom(RAND);
+    //population.setPopulationSize(POPULATION_SIZE);
+    //population.initPopulation();
+    
+    GAPopulation pop0 = new GAPopulation(POPULATION_SIZE, 0);
+    GAPopulation pop1 = new GAPopulation(POPULATION_SIZE, 1);
+    GAPopulation pop2 = new GAPopulation(POPULATION_SIZE, 2);
     
     //GATreeNode node = new GATreeNode(population.getTreeRoot());
     //GATree GATree = new GATree(population.getTreeRoot());
-    GATree tree = GATree.getInstance();
-    tree.setGARoot(population.getDefaultOptOptions(), population);
+    GATree tree0 = GATree.getInstance0();
+    tree0.setGARoot(pop0.getRandomIndividual(), pop0);
+    //tree0.setGARoot(population.getDefaultOptOptions(), population);
+    GATree tree1 = GATree.getInstance1();
+    tree1.setGARoot(pop1.getRandomIndividual(), pop1);
+    //tree1.setGARoot(population.getDefaultOptOptions(), population);
+    GATree tree2 = GATree.getInstance2();
+    tree2.setGARoot(pop2.getRandomIndividual(), pop2);
+    //tree2.setGARoot(population.getDefaultOptOptions(), population);
     //tree.setGARoot(population.getTreeRoot());
+    
+    
     
     GAHash map = GAHash.getInstance();
     map.init();

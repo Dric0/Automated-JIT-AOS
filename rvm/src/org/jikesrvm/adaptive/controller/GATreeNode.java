@@ -28,7 +28,7 @@ public class GATreeNode {
   /**
    *  The next node on the child list that I am on
    */
-  private TreeNode rightSibling = null;
+  private GATreeNode rightSibling = null;
   
   private List<GATreeNode> children = new ArrayList<GATreeNode>();
   
@@ -58,12 +58,24 @@ public class GATreeNode {
     this.leftChild = node;
   }
   
+  public GATreeNode getParent() {
+      return this.parent;
+  }
+  
   public void setParent(GATreeNode node) {
     this.parent = node;
   }
   
   public GATreeNode getLeftChild() {
     return this.leftChild;
+  }
+  
+  public GATreeNode getRightSibling() {
+    return this.rightSibling;
+  }
+  
+  public void setRightSibling(GATreeNode node) {
+    this.rightSibling = node;
   }
   
   public void setPopulation(GAPopulation population) {

@@ -57,11 +57,11 @@ public class GAHash {
     
     public void add(int methodId, double numSamples, GATreeNode node) {
       if (map.get(methodId) == null) {
-        System.out.println("Adding NEW key to hash map.");
+        //System.out.println("Adding NEW key to hash map.");
         map.putIfAbsent(methodId, new GAWrapper(numSamples, node));
       } else {
         GAWrapper tuple = (GAWrapper) map.get(methodId);
-        System.out.println("Key " + methodId + " already in the hash map. Replacing " + tuple.getSamples() + " with the new numSamples (" + numSamples + ").");
+        //System.out.println("Key " + methodId + " already in the hash map. Replacing " + tuple.getSamples() + " with the new numSamples (" + numSamples + ").");
         map.replace(methodId, new GAWrapper(numSamples, node));
       }
       //map.putIfAbsent(methodId, numSamples);

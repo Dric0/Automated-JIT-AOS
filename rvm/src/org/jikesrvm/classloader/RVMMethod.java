@@ -18,6 +18,7 @@ import java.lang.annotation.Annotation;
 import org.jikesrvm.compilers.common.CodeArray;
 import org.jikesrvm.compilers.common.LazyCompilationTrampoline;
 import org.jikesrvm.VM;
+import org.jikesrvm.adaptive.controller.GATreeNode;
 import org.jikesrvm.compilers.common.CompiledMethod;
 import org.jikesrvm.compilers.common.CompiledMethods;
 import org.jikesrvm.runtime.Entrypoints;
@@ -44,6 +45,70 @@ import static org.jikesrvm.classloader.ClassLoaderConstants.*;
  * {@link #readMethod} method.
  */
 public abstract class RVMMethod extends RVMMember {
+    
+  public int currentTime;
+    
+  public int previousOptLevel = -1;
+  
+  public GATreeNode treeNode;
+    
+  public GATreeNode treeNode0;
+  
+  public GATreeNode treeNode1;
+  
+  public GATreeNode treeNode2;
+  
+  public double initialFitness;
+  
+  public double sampleRecorded;
+  
+  public double samplesRecorded0;
+  
+  public double samplesRecorded1;
+  
+  public double samplesRecorded2;
+  
+  public void setTreeNode(int optLevel, GATreeNode node) {
+    if (optLevel == 0) {
+        this.treeNode0 = node;
+    } else if (optLevel == 1) {
+        this.treeNode1 = node;
+    } else if (optLevel == 2) {
+        this.treeNode2 = node;
+    }
+  }
+  
+  public GATreeNode getTreeNode(int optLevel) {
+    if (optLevel == 0) {
+        return this.treeNode0;
+    } else if (optLevel == 1) {
+        return this.treeNode1;
+    } else if (optLevel == 2) {
+        return this.treeNode2;
+    }
+    return null;
+  }
+  
+  public void setSamplesRecorded(int optLevel, double sample) {
+    if (optLevel == 0) {
+        this.samplesRecorded0 = sample;
+    } else if (optLevel == 1) {
+        this.samplesRecorded1 = sample;
+    } else if (optLevel == 2) {
+        this.samplesRecorded2 = sample;
+    }
+  }
+  
+  public double getSamplesRecorded(int optLevel) {
+    if (optLevel == 0) {
+        return this.samplesRecorded0;
+    } else if (optLevel == 1) {
+        return this.samplesRecorded1;
+    } else if (optLevel == 2) {
+        return this.samplesRecorded2;
+    }
+    return 0;
+  }
 
   /**
    * current compiled method for this method

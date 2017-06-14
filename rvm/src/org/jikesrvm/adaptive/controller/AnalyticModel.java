@@ -12,6 +12,8 @@
  */
 package org.jikesrvm.adaptive.controller;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.jikesrvm.VM;
 import org.jikesrvm.adaptive.recompilation.CompilerDNA;
 import org.jikesrvm.adaptive.util.AOSLogging;
@@ -145,9 +147,13 @@ abstract class AnalyticModel extends RecompilationStrategy {
     if (bestActionChoice == null) {
       plan = null;
     } else {
-      plan =
-          //bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost);
-          bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost, hme);
+        //try {
+        plan =
+                    //bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost);
+            bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost, hme);
+        //} catch (CloneNotSupportedException ex) {
+            //Logger.getLogger(AnalyticModel.class.getName()).log(Level.SEVERE, null, ex);
+        //}
     }
     return plan;
   }

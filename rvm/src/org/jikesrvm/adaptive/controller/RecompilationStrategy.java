@@ -13,6 +13,8 @@
 package org.jikesrvm.adaptive.controller;
 
 import java.util.Random;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.jikesrvm.VM;
 import org.jikesrvm.adaptive.recompilation.CompilerDNA;
 import org.jikesrvm.adaptive.util.AOSLogging;
@@ -25,6 +27,7 @@ import org.jikesrvm.compilers.opt.driver.InstrumentationPlan;
 import org.jikesrvm.compilers.opt.driver.OptimizationPlanElement;
 import org.jikesrvm.compilers.opt.driver.OptimizationPlanner;
 import org.jikesrvm.compilers.opt.runtimesupport.OptCompiledMethod;
+import org.jikesrvm.compilers.opt.util.Randomizer;
 
 /**
  * An abstract class providing the interface to the decision making
@@ -77,7 +80,7 @@ public abstract class RecompilationStrategy {
    */
   ControllerPlan createControllerPlan(RVMMethod method, int optLevel, InstrumentationPlan instPlan, int prevCMID,
                                          double expectedSpeedup, double expectedCompilationTime, 
-                                         double priority, HotMethodEvent hme) throws CloneNotSupportedException {
+                                         double priority, HotMethodEvent hme) {
 
     // Construct the compilation plan (varies depending on strategy)
     //CompilationPlan compPlan = createCompilationPlan((NormalMethod) method, optLevel, instPlan);
@@ -129,81 +132,565 @@ public abstract class RecompilationStrategy {
   //public int POPULATION_SIZE = 50;
   
   public CompilationPlan GAcreateCompilationPlan(NormalMethod method, int methodId, int optLevel,
-                                                   InstrumentationPlan instPlan, HotMethodEvent hme) throws CloneNotSupportedException {
-    System.out.println("GAcreateCompilationPlan() - Probably in here SPEA2 will run\nCalling GAcreatePopulation().");
-    //GAcreatePopulation(POPULATION_SIZE);
+                                                   InstrumentationPlan instPlan, HotMethodEvent hme) {
+    System.out.println("GAcreateCompilationPlan() - The optimization level to use in the plan: " + optLevel);
     
-    // Dric0 - Vou tentar gerar aqui (utilizando o SPEA2) novos valores para _options
-    //GAPopulation population = GAPopulation.getInstance();
-    //OptOptions[] _opt = population.getFittest().getGAOptions();
+    System.out.println("Initializing tree from opt level " + optLevel);
+    
+    
     
     GAHash map = GAHash.getInstance();
     double recentSample = hme.getNumSamples();
     
-    GATree tree = GATree.getInstance();
-    if (!map.checkExistence(methodId)) {
-      // No entries on the hash.
-      //System.out.println("No entries on the hash.");
-      GAIndividual individual = tree.getGARoot().getDNA();
-      map.add(methodId, recentSample, tree.getGARoot());     // This "recentSample" represents the value already executed.
-    } else {
-      // Already on the hash map.
-      //System.out.println("Already on the hash map.");
-      GAWrapper tuple = map.getValues(methodId);
-      //GAIndividual individual = map.getIndividual(methodId);
-      //double previousSample = map.getSamples(methodId);
-      GAIndividual individual = tuple.getNode().getDNA();
-      double previousSample = tuple.getSamples();
-      individual.setFitness(previousSample);
-      
-      GAPopulation pop = new GAPopulation();
-      
-      
-      //if (individual == tree.getGARoot().getDNA()) {
-      if (tuple.getNode() == tree.getGARoot()) {
-        // It is the root -> Breadth search for new node OR create new one in case none is found.
+    GATree tree = null;
+    //GATree tree1 = null;
+    
+    // Caso o level de opt mude para o method -> Verificar o level que foi executado pela ultima vez (currentOptLevel)
+    //                                        -> Verificar se houve ganho ou nao de desempenho
+    //                                              -> Se melhorou, utilizar a populacao atual para criar um novo no na NOVA arvore
+    //                                              -> Se piorou, utilizar a populacao do pai
+    
+    if (optLevel == 0) {
+        tree = GATree.getInstance0();
+        System.out.println("The tree being used is the opt0.");
+        if (tree.getGARoot() != null) System.out.println("\tThe opt0 tree has its root.");
+    } else if (optLevel == 1) {
+        tree = GATree.getInstance1();
+        System.out.println("The tree being used is the opt1.");
+        if (tree.getGARoot() != null) System.out.println("\tThe opt1 tree has its root.");
+    } else if (optLevel == 2) {
+        tree = GATree.getInstance2();
+        System.out.println("The tree being used is the opt2.");
+        if (tree.getGARoot() != null) System.out.println("\tThe opt2 tree has its root.");
+    }
+    
+    // Checking the previous optLevel.
+    System.out.println("---> Checking if it's the first entry of this method.");
+    //if (method.previousOptLevel != -1 && method.previousOptLevel != optLevel) { // Se previousOptLevel for -1 -> nao foi inicializado ainda.
+                                                                                // Se previousOptLevel for diferente de optLevel -> mudou o level.
+    if (method.previousOptLevel != -1) {
+        System.out.println("---> The previousOptLevel is different than -1 -> It is NOT the first entry for this method.");
         
-        if (tree.getGARoot().getLeftChild() == null) { // No childs - no need for search, just create new node and set leftChild.
+        System.out.println("* Setting sample from the individual at the treeNode with recentSample(" + recentSample + ") *");
+        method.treeNode.getDNA().sample = recentSample;
         
-        // To generate new node -> Select two individuals from pop (using its probability)
-        //                      -> Crossover them and check if mutate or not
-        //                      -> Replace one of the parents with the new node
+        System.out.println("---> Checking if the optLevel changed.");
+        if (method.previousOptLevel != optLevel) {
         
-        // Population we use at this new node:
-        pop = tuple.getNode().getPopulation().clone(); // Population copied.
-        
-        // TODO - Select two individuals from the cloned pop.
-        
-        // Testing git stuff...
-        
-        //tree.getGARoot().setLeftChild(tuple.getNode());
-        tree.addChild(individual, pop); // TODO - Parameters not right. Need yet to generate new individual and pop.
-        
+            int previousOptLevel = method.previousOptLevel;
+            System.out.println("\tThe optLevel DID changed. Current: " + optLevel + ", Previous: " + previousOptLevel);
+
+            System.out.println("\tChecking the performance. Previous sample from old opt level: " + method.sampleRecorded/*getSamplesRecorded(previousOptLevel)*/ + ", recent sample: " + recentSample);
+            // TODO - Deixar um unico samplesRecorded - acho que nao tem necessidade de um pra cada level.
+            //if (recentSample > method.getSamplesRecorded(previousOptLevel)) {
+            if (recentSample > method.sampleRecorded) {
+                System.out.println("\t\tPerformance is worse than before -> Need to use the parent's node (in case there is one) population");
+
+                //if (method.getTreeNode(previousOptLevel).getParent() == null) {
+                if (method.treeNode.getParent() == null) {
+                    System.out.println("\t\t\tThere is no parent (it is the root) -> Getting the root of the actual opt level tree.");
+                    System.out.println("\t\t\tCurrent tree node for this method: " + method.getTreeNode(previousOptLevel) + "/" + method.treeNode);
+                    method.setTreeNode(optLevel, tree.getGARoot());
+                    method.treeNode = tree.getGARoot();
+                    System.out.println("\t\t\tTree root (it will be used as new node): " + tree.getGARoot());
+                    System.out.println("\t\t\tNew tree node for this method: " + method.getTreeNode(optLevel) + "/" + method.treeNode);
+                } else {
+                    System.out.println("\t\t\tThere IS a parent for the current node -> Need to rollback.");
+                    System.out.println("\t\t\tThe opt level changed so we need to rollback to the parent and use him to create new node in the new tree.");
+                    
+                    //System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
+                    //method.treeNode = method.treeNode.getParent();
+                    //System.out.println("\t\t\tRollback - New tree node for this method (the parent): " + method.treeNode);
+                    
+                    System.out.println("\t\t\tCreating new node from the parent.");
+                    
+                    // TODO - Create new node. check
+                    GATreeNode newNode = generateNode(tree, method, optLevel, true);
+                    System.out.println("\t\tMaking method point to created node.");
+                    System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                    method.treeNode = newNode;
+                    System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
+                    
+                }
+            } else {
+                System.out.println("\t\tPerformance is better than before -> Search for childs or create new one.");
+                System.out.println("\t\tAs the opt level changed, we will use this node to create a new one and put in the NEW tree.");
+
+                System.out.println("\t\tGenerating new node (Using the new optLevel already)");
+                // TODO - Create new node. check
+                GATreeNode newNode = generateNode(tree, method, optLevel, false);
+                System.out.println("\t\tMaking method point to created node.");
+                System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                method.treeNode = newNode;
+                System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
+
+            }
+        } else {
+            System.out.println("\tThe optLevel did <NOT> change. Current: " + optLevel);
+            
+            System.out.println("\tChecking the performance. Previous sample from old opt level: " + method.sampleRecorded + ", recent sample: " + recentSample);
+            if (recentSample > method.sampleRecorded) {
+                System.out.println("\t\tPerformance is worse than before -> Need to rollback if it's not the root, if is the root need to search child OR create new node.");
+                
+                if (method.treeNode.getParent() == null) {
+                    System.out.println("\t\t\tThere is no parent (it is the root) -> Need to breadth search its childs OR create new child node.");
+                    if (method.treeNode.getLeftChild() == null) {
+                        System.out.println("\t\t\t\tThere is no child node to search -> Creating new one.");
+                        
+                        // TODO - Create new node. check
+                        GATreeNode newNode = generateNode(tree, method, optLevel, false);
+                        System.out.println("\t\tMaking method point to created node.");
+                        System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                        method.treeNode = newNode;
+                        System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
+                        
+                    } else {
+                        System.out.println("\t\t\t\tThere IS child node to search -> Setting method to the child.");
+                        System.out.println("\t\t\tOld tree node for this method: " + method.treeNode + ". Tree node: " + tree.getGARoot());
+                        method.treeNode = method.treeNode.getLeftChild();
+                        System.out.println("\t\t\tNew tree node for this method: " + method.treeNode + ". Tree node: " + tree.getGARoot());
+                    }
+                } else {
+                    System.out.println("\t\t\tThere IS a parent (current node is NOT the root) -> Need to rollback to the parent and search another path OR create new node.");
+                    
+                    System.out.println("\t\t\tChecking if the parent has more childs.");
+                    if (method.treeNode.getRightSibling() == null) {
+                        System.out.println("\t\t\t\tThere are NO brother for this node -> Need to create new node.");
+                        //method.treeNode = method.treeNode.getParent();
+                        
+                        // TODO - Create new node. check
+                        GATreeNode newNode = generateNode(tree, method, optLevel, true);
+                        System.out.println("\t\tMaking method point to created node.");
+                        System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                        method.treeNode = newNode;
+                        System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
+                        
+                    } else {
+                        System.out.println("\t\t\t\tThere is a brother for this node -> Pointing method to it.");
+                        System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
+                        method.treeNode = method.treeNode.getRightSibling();
+                        System.out.println("\t\t\tNew tree node for this method (the right brother): " + method.treeNode);
+                    }
+                }
+                
+            } else {
+                System.out.println("\t\tPerformance is better than before -> Need to go to child node (if there is one) OR create new node.");
+                
+                if (method.treeNode.getLeftChild() == null) {
+                    System.out.println("\t\t\tThere is no child node -> Need to create new one.");
+                    
+                    // TODO - Create new node. check
+                    GATreeNode newNode = generateNode(tree, method, optLevel, false);
+                    System.out.println("\t\tMaking method point to created node.");
+                    System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                    method.treeNode = newNode;
+                    System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
+                    
+                } else {
+                    System.out.println("\t\t\tThere IS a child node -> Need to set is as the new one.");
+                    
+                    System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
+                    method.treeNode = method.treeNode.getLeftChild();
+                    System.out.println("\t\t\tNew tree node for this method (left-most child): " + method.treeNode);
+                }
+                
+            }
+             
         }
         
-      } else { // The node is not the root.
+        System.out.println("Retrieving Samples from variable in RVMMethod. Samples: " + method.sampleRecorded);
         
-      }
-      
-      //tuple.getIndividual().setFitness(tuple.getSamples());
-      map.add(methodId, recentSample, tuple.getNode()); // TODO - Need to add poiting to new node.
+        GAIndividual DNA = method.treeNode.getDNA();
+        
+        System.out.println("Creating new optOptions[] to receive the DNA.");
+        OptOptions options = new OptOptions();
+        int maxOptLevel = getMaxOptLevel();
+        OptOptions[] _opt = new OptOptions[maxOptLevel + 1];
+        String[] optCompilerOptions = Controller.getOptCompilerOptions();
+        for (int i = 0; i <= maxOptLevel; i++) {
+          _opt[i] = options.dup();
+          _opt[i].setOptLevel(i);               // set optimization level specific optimizations
+          processCommandLineOptions(_opt[i], i, maxOptLevel, optCompilerOptions);
+        }
+        System.out.println("New optOptions[] created -> Cloning DNA parameters into it.");
+        
+        cloneOptOptions(_opt, DNA, optLevel);
+        System.out.println("Cloning completed -> Returning to Jikes the new optOptions(_opt)\n\n");
+
+        return new CompilationPlan(method, _optPlans[optLevel], null, _opt[optLevel]);
+        
+    //} else if (method.getTreeNode(optLevel) == null) {
+    } else if (method.treeNode == null) {
+        System.out.println("No tree node set at this method (first entry). Need to make it point to the root of the current opt level(" + optLevel + ").");
+        
+        System.out.println("\tTree root -> " + tree.getGARoot());
+        method.setTreeNode(optLevel, tree.getGARoot());
+        method.treeNode = tree.getGARoot();
+        System.out.println("\tSetting tree node -> " + method.getTreeNode(optLevel));
+        System.out.println("\tSetting the first record of samples for this method - " + recentSample + " samples.");
+        method.setSamplesRecorded(optLevel, recentSample);
+        method.sampleRecorded = recentSample;
+        
+        System.out.println("\tSetting the current opt level used at this method.");
+        method.previousOptLevel = optLevel;
+        
+        System.out.println("\tReturning the standard compilation plan for this method.\n\n");
+        return new CompilationPlan(method, _optPlans[optLevel], null, _options[optLevel]);
     }
     
     
-    /*System.out.println("Retrived map.");
-    if (!map.checkExistence(methodId)) {
-      System.out.println("No key inside map.");
-    }*/
-    GAWrapper tuple = map.getValues(methodId);
-    System.out.println("Retrieving tuple from map. Samples: " + tuple.getSamples());
-    GAIndividual individual = tuple.getNode().getDNA();
-    OptOptions[] _opt = individual.getGAOptions();
-    //map.add2(optLevel, optLevel, individual);
     
-    //System.out.println("_options[optLevel]: " + _options[optLevel]);
-    // Construct a plan from the basic pre-computed opt-levels
-    //return new CompilationPlan(method, _optPlans[optLevel], null, _options[optLevel]);
-    return new CompilationPlan(method, _optPlans[optLevel], null, _opt[optLevel]);
+    
+    //----------------------------------------------OLD
+    
+    return new CompilationPlan(method, _optPlans[optLevel], null, _options[optLevel]);
+  }
+  
+  public GATreeNode generateNode(GATree tree, NormalMethod method, int optLevel, boolean rollback) {
+    System.out.println("~~~/~~~ Inside new generateNode()");
+      
+    // Coping population into new one.
+    System.out.println("~~~/~~~ Creating pop and coping population from current node at method.");
+    GAPopulation orig = method.treeNode.getPopulation();
+    System.out.println("~~~/~~~ Checking if rollback is needed.");
+    if (rollback) {
+        System.out.println("~~~/~~~/~~~ Rollback is needed -> Coping population from the father.");
+        orig = method.treeNode.getParent().getPopulation();
+    }
+    GAPopulation clonedPop = new GAPopulation(orig);
+    System.out.println("~~~/~~~ Copy population created.");
+      
+    // Selecting two individuals to crossover.
+    System.out.println("~~~/~~~ Selecting two individuals from the cloned pop using tournament.");
+    tournamentResult result = binaryTournament(clonedPop);
+    GAIndividual firstIndividual = result.getIndividual();
+    int INDEX1 = result.getFirstIndex();
+    System.out.println("~~~/~~~ First individual selected from binary tournament. It has the INDEX: " + INDEX1 + " from the cloned pop.");
+    result = binaryTournament(clonedPop);
+    GAIndividual secondIndividual = result.getIndividual();
+    int INDEX2 = result.getFirstIndex();
+    System.out.println("~~~/~~~ Second individual selected from binary tournament. It has the INDEX: " + INDEX2 + " from the cloned pop.");
+    
+    // Crossover
+    System.out.println("~~~/~~~ Performing crossover on the two individuals.");
+    GAIndividual newIndividual = crossover(clonedPop, firstIndividual, secondIndividual);
+    System.out.println("~~~/~~~ Replacing one of the parents with the new individual generanted from crossover.");
+    clonedPop.replaceIndividual(INDEX2, newIndividual);
+    
+    // Mutating newIndividual (or not, depdends on mutation rate).
+    System.out.println("~~~/~~~ Mutating newIndividual (or not, depdends on mutation rate).");
+    System.out.println("~~~/~~~ *Using the optLevel from the new tree (IF the opt level changed) <- VERIFY");
+    mutate(newIndividual, optLevel);
+    
+    // Adding new node to the tree.
+    System.out.println("~~~/~~~ Adding new node in the tree and returning it.");
+    GATreeNode newNode = tree.addChild(newIndividual, clonedPop, method.treeNode, rollback);
+    System.out.println("~~~/~~~ Node added to the tree. Tree level: " + optLevel);
+    System.out.println("~~~/~~~ Returning new node.");
+    return newNode;
+  }
+  
+  public void generateNode(GATree tree, NormalMethod method, int methodId, int optLevel, double recentSample, boolean rollback) {
+    //GATree tree = GATree.getInstance();
+    GAHash map = GAHash.getInstance();
+    
+    System.out.println("\t\t\tInside generateNode()");
+    
+    
+    System.out.println("\t\t\tCreating pop and coping population from current node at method.");
+    int popSize = method.treeNode.getPopulation().getPopulationSize();
+    //GAPopulation pop = new GAPopulation();
+    GAPopulation orig = method.treeNode.getPopulation();
+    GAPopulation pop = new GAPopulation(orig);  // Creating new pop as copy of the original
+    //pop.setPopulationSize(50);
+    //pop.individuals = new GAIndividual[50];
+    System.out.println("\t\t\tCopy population created.");
+    
+    // Population we use at this new node:
+    //System.out.println("\tCoping population: ");
+    
+    //System.out.println("\tTest: " + method.getTreeNode(method.previousOptLevel).getPopulation().individuals);
+    
+    /*GAIndividual orig = method.treeNode.getDNA();
+    for (int i = 0; i < 50; i++) {
+        pop.individuals[i] = new GAIndividual();
+        //pop.individuals[i].initOptOption();
+        pop.individuals[i].initOptOption(optLevel);
+        //cloneOptOptions(method.getTreeNode(method.previousOptLevel).getPopulation().individuals[i], pop.individuals[i]);
+        pop.individuals[i].copy(orig);
+    }*/
+    //System.out.println("\tPopulation copied.");
+
+    // Select two individuals from the cloned pop using tournament.
+    System.out.println("\tSelecting two individuals from the cloned pop using tournament.");
+    //GAIndividual firstIndividual = binaryTournament(pop);
+    //GAIndividual secondIndividual = binaryTournament(pop);
+    tournamentResult result = binaryTournament(pop);
+    GAIndividual firstIndividual = result.getIndividual();
+    int INDEX1 = result.getFirstIndex();
+    System.out.println("\tFirst individual selected from binary tournament. It has the INDEX: " + INDEX1 + " from the cloned pop.");
+
+    result = binaryTournament(pop);
+    GAIndividual secondIndividual = result.getIndividual();
+    int INDEX2 = result.getFirstIndex();
+    System.out.println("\tSecond individual selected from binary tournament. It has the INDEX: " + INDEX2 + " from the cloned pop.");
+
+    // TODO - Perform crossover and mutation.
+    System.out.println("\tPerforming crossover on the two individuals.");
+    GAIndividual newIndividual = crossover(pop, firstIndividual, secondIndividual);
+    System.out.println("\tReplacing one of the parents with the new individual generanted from crossover.");
+    pop.replaceIndividual(INDEX2, newIndividual);
+    // Mutating newIndividual (or not, depdends on mutation rate).
+    System.out.println("\tMutating newIndividual (or not, depdends on mutation rate).");
+    mutate(newIndividual, optLevel);
+
+    //tree.getGARoot().setLeftChild(tuple.getNode());
+    System.out.println("\tAdding new node in the tree and Making current method point to new node.");
+    //GATreeNode aux = method.getTreeNode(optLevel);
+
+    GATreeNode auxNew = tree.addChild(newIndividual, pop, method.getTreeNode(optLevel), rollback);
+    method.setTreeNode(optLevel, auxNew);
+    //method.treeNode0 = tree.addChild(newIndividual, pop, aux, rollback); // TODO - Parameters not right. Need yet to generate new individual and pop.
+    
+    map.add(methodId, recentSample, method.getTreeNode(optLevel));
+    System.out.println("\tPriting part of the tree: ");
+    tree.print();
+  }
+  
+  public void cloneOptOptions(OptOptions[] _opt, GAIndividual DNA, int optLevel) {
+      
+    _opt[optLevel].FIELD_ANALYSIS = DNA.FIELD_ANALYSIS;
+    _opt[optLevel].INLINE = DNA.INLINE;
+    _opt[optLevel].INLINE_GUARDED = DNA.INLINE_GUARDED;
+    _opt[optLevel].INLINE_GUARDED_INTERFACES = DNA.INLINE_GUARDED_INTERFACES;
+    _opt[optLevel].INLINE_PREEX = DNA.INLINE_PREEX;
+    _opt[optLevel].LOCAL_CONSTANT_PROP = DNA.LOCAL_CONSTANT_PROP;
+    _opt[optLevel].LOCAL_COPY_PROP = DNA.LOCAL_COPY_PROP;
+    _opt[optLevel].LOCAL_CSE = DNA.LOCAL_CSE;
+    _opt[optLevel].REORDER_CODE = DNA.REORDER_CODE;
+    _opt[optLevel].H2L_INLINE_NEW = DNA.H2L_INLINE_NEW;
+    _opt[optLevel].REGALLOC_COALESCE_MOVES = DNA.REGALLOC_COALESCE_MOVES;
+    _opt[optLevel].REGALLOC_COALESCE_SPILLS = DNA.REGALLOC_COALESCE_SPILLS;
+    _opt[optLevel].CONTROL_STATIC_SPLITTING = DNA.CONTROL_STATIC_SPLITTING;
+    _opt[optLevel].ESCAPE_SCALAR_REPLACE_AGGREGATES = DNA.ESCAPE_SCALAR_REPLACE_AGGREGATES;
+    _opt[optLevel].ESCAPE_MONITOR_REMOVAL = DNA.ESCAPE_MONITOR_REMOVAL;
+    _opt[optLevel].REORDER_CODE_PH = DNA.REORDER_CODE_PH;
+    _opt[optLevel].H2L_INLINE_WRITE_BARRIER = DNA.H2L_INLINE_WRITE_BARRIER;
+    _opt[optLevel].H2L_INLINE_PRIMITIVE_WRITE_BARRIER = DNA.H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
+    _opt[optLevel].OSR_GUARDED_INLINING = DNA.OSR_GUARDED_INLINING;
+    _opt[optLevel].OSR_INLINE_POLICY = DNA.OSR_INLINE_POLICY;
+    _opt[optLevel].L2M_HANDLER_LIVENESS = DNA.L2M_HANDLER_LIVENESS;
+    
+  }
+  
+  public final float MUTATION_RATE = 10;
+  
+  public void mutate(GAIndividual individual, int optLevel) {
+    // One parameter from the DNA will be changed per mutate() call.
+    Randomizer randUtil = Randomizer.getInstance();
+    Random rand = randUtil.getRandom();
+      
+    int coin = rand.nextInt(100);
+    if (coin < MUTATION_RATE) {
+        System.out.println("~~~/~~~/~~~ Performing mutation");
+        individual.mutateBoolean(optLevel);
+    }
+  }
+  
+  /*public void mutate(GAIndividual individual, int optLevel) {
+    // One parameter from the DNA will be changed per mutate() call.
+    Randomizer randUtil = Randomizer.getInstance();
+    Random rand = randUtil.getRandom();
+    
+    int coin = rand.nextInt(100);
+    if (coin < 10) {
+      // Performing mutation.
+      int INDEX = rand.nextInt(16);
+      System.out.println("\t\tPerforming mutation.\t\tThe option with INDEX: " + INDEX + " was selected.");
+      System.out.println("\t\tPerforming mutation using the new mutateBoolean method.");
+      //individual.mutateBoolean(INDEX, optLevel);
+      individual.mutateBoolean(optLevel);
+    }
+  }*/
+  
+  public tournamentResult binaryTournament(GAPopulation pop) {
+    Randomizer randUtil = Randomizer.getInstance();
+    
+    int popSize = pop.getPopulationSize();
+    int INDEX1 = randUtil.nextInt(popSize);
+    GAIndividual firstContender = pop.getIndividual(INDEX1);
+    int INDEX2 = randUtil.nextInt(popSize);
+    GAIndividual secondContender = pop.getIndividual(INDEX2);
+    System.out.println("~~~/~~~/~~~ First contender sample's: " + firstContender.sample + ", Second contender sample's: " + secondContender.sample);
+    if (firstContender.sample < secondContender.sample) {
+      return new tournamentResult(firstContender, INDEX1);
+    } else {
+      return new tournamentResult(secondContender, INDEX2);
+    }
+  }
+  
+  public final class tournamentResult {
+    private final GAIndividual individual;
+    private final int first;
+    //private final int second;
+
+    public tournamentResult(GAIndividual individual, int first) {
+        this.individual = individual;
+        this.first = first;
+        //this.second = second;
+    }
+
+    public GAIndividual getIndividual() {
+        return individual;
+    }
+
+    public int getFirstIndex() {
+        return first;
+    }
+    
+    /*public int getSecondIndex() {
+        return second;
+    }*/
+  }
+  
+  public GAIndividual crossover(GAPopulation pop, GAIndividual firstIndividual, GAIndividual secondIndividual) {
+    Random rand = pop.getRandom();
+    Randomizer randUtil = Randomizer.getInstance();
+    rand = randUtil.getRandom();
+    
+    GAIndividual newIndividual = new GAIndividual();
+    newIndividual.initOptOption();
+    //int optLevel = getMaxOptLevel();
+    //OptOptions[] newSolOpt = newIndividual.getGAOptions();
+    
+    int coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.FIELD_ANALYSIS = firstIndividual.FIELD_ANALYSIS;
+    } else {
+      newIndividual.FIELD_ANALYSIS = secondIndividual.FIELD_ANALYSIS;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.INLINE = firstIndividual.INLINE;
+    } else {
+      newIndividual.INLINE = secondIndividual.INLINE;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.INLINE_GUARDED = firstIndividual.INLINE_GUARDED;
+    } else {
+      newIndividual.INLINE_GUARDED = secondIndividual.INLINE_GUARDED;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.INLINE_GUARDED_INTERFACES = firstIndividual.INLINE_GUARDED_INTERFACES;
+    } else {
+      newIndividual.INLINE_GUARDED_INTERFACES = secondIndividual.INLINE_GUARDED_INTERFACES;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.INLINE_PREEX = firstIndividual.INLINE_PREEX;
+    } else {
+      newIndividual.INLINE_PREEX = secondIndividual.INLINE_PREEX;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.LOCAL_CONSTANT_PROP = firstIndividual.LOCAL_CONSTANT_PROP;
+    } else {
+      newIndividual.LOCAL_CONSTANT_PROP = secondIndividual.LOCAL_CONSTANT_PROP;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.LOCAL_COPY_PROP = firstIndividual.LOCAL_COPY_PROP;
+    } else {
+      newIndividual.LOCAL_COPY_PROP = secondIndividual.LOCAL_COPY_PROP;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.LOCAL_CSE = firstIndividual.LOCAL_CSE;
+    } else {
+      newIndividual.LOCAL_CSE = secondIndividual.LOCAL_CSE;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.REORDER_CODE = firstIndividual.REORDER_CODE;
+    } else {
+      newIndividual.REORDER_CODE = secondIndividual.REORDER_CODE;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.H2L_INLINE_NEW = firstIndividual.H2L_INLINE_NEW;
+    } else {
+      newIndividual.H2L_INLINE_NEW = secondIndividual.H2L_INLINE_NEW;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.REGALLOC_COALESCE_MOVES = firstIndividual.REGALLOC_COALESCE_MOVES;
+    } else {
+      newIndividual.REGALLOC_COALESCE_MOVES = secondIndividual.REGALLOC_COALESCE_MOVES;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.REGALLOC_COALESCE_SPILLS = firstIndividual.REGALLOC_COALESCE_SPILLS;
+    } else {
+      newIndividual.REGALLOC_COALESCE_SPILLS = secondIndividual.REGALLOC_COALESCE_SPILLS;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.CONTROL_STATIC_SPLITTING = firstIndividual.CONTROL_STATIC_SPLITTING;
+    } else {
+      newIndividual.CONTROL_STATIC_SPLITTING = secondIndividual.CONTROL_STATIC_SPLITTING;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES = firstIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES;
+    } else {
+      newIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES = secondIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.ESCAPE_MONITOR_REMOVAL = firstIndividual.ESCAPE_MONITOR_REMOVAL;
+    } else {
+      newIndividual.ESCAPE_MONITOR_REMOVAL = secondIndividual.ESCAPE_MONITOR_REMOVAL;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.REORDER_CODE_PH = firstIndividual.REORDER_CODE_PH;
+    } else {
+      newIndividual.REORDER_CODE_PH = secondIndividual.REORDER_CODE_PH;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.H2L_INLINE_WRITE_BARRIER = firstIndividual.H2L_INLINE_WRITE_BARRIER;
+    } else {
+      newIndividual.H2L_INLINE_WRITE_BARRIER = secondIndividual.H2L_INLINE_WRITE_BARRIER;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER = firstIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
+    } else {
+      newIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER = secondIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.OSR_GUARDED_INLINING = firstIndividual.OSR_GUARDED_INLINING;
+    } else {
+      newIndividual.OSR_GUARDED_INLINING = secondIndividual.OSR_GUARDED_INLINING;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.OSR_INLINE_POLICY = firstIndividual.OSR_INLINE_POLICY;
+    } else {
+      newIndividual.OSR_INLINE_POLICY = secondIndividual.OSR_INLINE_POLICY;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual.L2M_HANDLER_LIVENESS = firstIndividual.L2M_HANDLER_LIVENESS;
+    } else {
+      newIndividual.L2M_HANDLER_LIVENESS = secondIndividual.L2M_HANDLER_LIVENESS;
+    }
+    
+    return newIndividual;
   }
   
   //protected Random rand = new Random();
@@ -246,7 +733,7 @@ public abstract class RecompilationStrategy {
    */
   public CompilationPlan createCompilationPlan(NormalMethod method, int optLevel,
                                                    InstrumentationPlan instPlan) {
-    System.out.println("Inside RecompilationStrategy.java - createCompilationPlan() - Calling the GA version.");
+    //System.out.println("Inside RecompilationStrategy.java - createCompilationPlan() - Calling the GA version.");
     //GAcreateCompilationPlan(method, optLevel, instPlan);
     // Construct a plan from the basic pre-computed opt-levels
     return new CompilationPlan(method, _optPlans[optLevel], null, _options[optLevel]);

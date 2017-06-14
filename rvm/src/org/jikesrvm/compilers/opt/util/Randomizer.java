@@ -13,19 +13,25 @@ import java.util.Random;
  */
 public class Randomizer {
     final private static Randomizer INSTANCE = new Randomizer();
-    final private Random random = new Random();
+    private Random random;
 
     //it is important to keep this, so no one can make multiple instances of this class
     private Randomizer() {
     }
 
     final static public Randomizer getInstance() {
-        return INSTANCE;
+      return INSTANCE;
     }
     final public int nextInt(int i) {
-        return random.nextInt(i);
+      return random.nextInt(i);
     }
     final public long nextLong() {
-        return random.nextLong();
+      return random.nextLong();
+    }
+    final public void setRandom(Random random) {
+      this.random = random;
+    }
+    final public Random getRandom() {
+      return this.random;
     }
 }

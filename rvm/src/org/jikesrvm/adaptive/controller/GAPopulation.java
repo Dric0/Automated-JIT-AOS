@@ -5,7 +5,13 @@
  */
 package org.jikesrvm.adaptive.controller;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.Random;
+import org.jikesrvm.compilers.opt.util.Randomizer;
 
 /**
  *
@@ -15,6 +21,16 @@ public class GAPopulation implements Cloneable {
     private static final GAPopulation INSTANCE = new GAPopulation();
     
     public GAPopulation() {}
+    
+    public GAPopulation(int popSize, int optLevel) {
+      this.popSize = popSize;
+      this.initPopulation(optLevel);
+    }
+    
+    public GAPopulation(GAPopulation orig) {
+      this.popSize = orig.getPopulationSize();
+      this.copyPopulation(orig);
+    }
     
     public static GAPopulation getInstance() {
       return INSTANCE;
@@ -28,6 +44,10 @@ public class GAPopulation implements Cloneable {
     
     public void setRandom(Random rand) {
       this.rand = rand;
+    }
+    
+    public Random getRandom() {
+      return this.rand;
     }
     
     public void setPopulationSize(int popSize) {
@@ -61,17 +81,48 @@ public class GAPopulation implements Cloneable {
       return defaultOptOptions;
     }
     
+    public GAIndividual getRandomIndividual() {
+      Randomizer randUtil = Randomizer.getInstance();
+      int INDEX = randUtil.nextInt(popSize);
+      return individuals[INDEX];
+    }
+    
+    public void replaceIndividual(int INDEX, GAIndividual newIndividual) {
+      individuals[INDEX] = newIndividual;
+    }
+    
     public void initPopulation() {
-      System.out.println("Inside initPopulation");
+      //System.out.println("Inside initPopulation");
       individuals = new GAIndividual[popSize];  
+      Randomizer randUtil = Randomizer.getInstance();
+      this.rand = randUtil.getRandom();
     
       for (int i = 0; i < popSize; i++) {
         int INDEX = rand.nextInt(16);
         //System.out.println("TESTE: " + INDEX);
-        System.out.println("Individuals[" + i + "]. <------------");
+        //System.out.println("Individuals[" + i + "]. <------------");
         individuals[i] = new GAIndividual();
-        individuals[i].createIndividual(INDEX);
+        individuals[i].createIndividual();
         individuals[i].setProbability(popSize);
+      }
+    }
+    
+    public void initPopulation(int optLevel) {
+      //System.out.println("Inside initPopulation");
+      individuals = new GAIndividual[popSize];  
+    
+      for (int i = 0; i < popSize; i++) {
+        individuals[i] = new GAIndividual();
+        individuals[i].createIndividual(optLevel);
+        individuals[i].setProbability(popSize);
+      }
+    }
+    
+    public final void copyPopulation(GAPopulation orig) {
+      this.individuals = new GAIndividual[popSize];
+      for (int i = 0; i < popSize; i++) {
+        this.individuals[i] = new GAIndividual();
+        this.individuals[i].copy(orig.individuals[i]);
       }
     }
     
@@ -100,4 +151,29 @@ public class GAPopulation implements Cloneable {
       }
     }
 
+    public static Object copy(Object orig) {
+        Object obj = null;
+        try {
+            // Write the object out to a byte array
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            ObjectOutputStream out = new ObjectOutputStream(bos);
+            out.writeObject(orig);
+            out.flush();
+            out.close();
+
+            // Make an input stream from the byte array and read
+            // a copy of the object back in.
+            ObjectInputStream in = new ObjectInputStream(
+                new ByteArrayInputStream(bos.toByteArray()));
+            obj = in.readObject();
+        }
+        catch(IOException e) {
+            e.printStackTrace();
+        }
+        catch(ClassNotFoundException cnfe) {
+            cnfe.printStackTrace();
+        }
+        return obj;
+    }
+    
 }
