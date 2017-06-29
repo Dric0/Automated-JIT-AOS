@@ -28,6 +28,9 @@ public class Randomizer {
     final public long nextLong() {
       return random.nextLong();
     }
+    final public double nextDouble() {
+      return random.nextDouble();
+    }
     final public void setRandom(Random random) {
       this.random = random;
     }

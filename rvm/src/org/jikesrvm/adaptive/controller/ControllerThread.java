@@ -171,28 +171,44 @@ public final class ControllerThread extends SystemThread {
     //population.setRandom(RAND);
     //population.setPopulationSize(POPULATION_SIZE);
     //population.initPopulation();
+    boolean treesCreated = false;
     
-    GAPopulation pop0 = new GAPopulation(POPULATION_SIZE, 0);
-    GAPopulation pop1 = new GAPopulation(POPULATION_SIZE, 1);
-    GAPopulation pop2 = new GAPopulation(POPULATION_SIZE, 2);
+    if (!treesCreated) {
     
-    //GATreeNode node = new GATreeNode(population.getTreeRoot());
-    //GATree GATree = new GATree(population.getTreeRoot());
-    GATree tree0 = GATree.getInstance0();
-    tree0.setGARoot(pop0.getRandomIndividual(), pop0);
-    //tree0.setGARoot(population.getDefaultOptOptions(), population);
-    GATree tree1 = GATree.getInstance1();
-    tree1.setGARoot(pop1.getRandomIndividual(), pop1);
-    //tree1.setGARoot(population.getDefaultOptOptions(), population);
-    GATree tree2 = GATree.getInstance2();
-    tree2.setGARoot(pop2.getRandomIndividual(), pop2);
-    //tree2.setGARoot(population.getDefaultOptOptions(), population);
-    //tree.setGARoot(population.getTreeRoot());
+        System.out.println("Populations (one for each opt level) being created using the new constructor (new GAPopulation(POPULATION_SIZE)).");
+        GAPopulation pop0 = new GAPopulation(POPULATION_SIZE, 0, true);
+        System.out.println("Populations 0 created.");
+        GAPopulation pop1 = new GAPopulation(POPULATION_SIZE, 1, true);
+        System.out.println("Populations 1 created.");
+        GAPopulation pop2 = new GAPopulation(POPULATION_SIZE, 2, true);
+        System.out.println("Populations 2 created.");
+
+        System.out.println("Creating the 3 tress - one for each opt level.");
+
+        GATree tree0 = GATree.getInstance0();
+        System.out.println("\tTree0 (opt level 0) created.");
+        tree0.setGARoot(pop0.getRootIndividual(), pop0);
+        System.out.println("\tRoot set as the first individual from pop (it has default options).");
+
+        GATree tree1 = GATree.getInstance1();
+        System.out.println("\tTree1 (opt level 1) created.");
+        tree1.setGARoot(pop1.getRootIndividual(), pop1);
+        System.out.println("\tRoot set as the first individual from pop (it has default options).");
+
+        GATree tree2 = GATree.getInstance2();
+        System.out.println("\tTree2 (opt level 2) created.");
+        tree2.setGARoot(pop2.getRootIndividual(), pop2);
+        System.out.println("\tRoot set as the first individual from pop (it has default options).");
+
+        System.out.println("Trees created.");
     
-    
-    
-    GAHash map = GAHash.getInstance();
-    map.init();
+        GAHash map = GAHash.getInstance();
+        map.init();
+        
+        treesCreated = true;
+        
+    } else
+        System.out.println("Trees,pop and map already created/initialized previously.");
 
     // Enter main controller loop.
     // Pull an event to process off of

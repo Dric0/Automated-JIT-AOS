@@ -127,35 +127,52 @@ abstract class AnalyticModel extends RecompilationStrategy {
 
     // Consider all choices in the vector of possibilities
     NormalMethod meth = (NormalMethod) hme.getMethod();
+    
+    boolean flag = true;
+    
     for (RecompilationChoice choice : recompilationChoices) {
       // Get the cost and benefit of this choice
       double cost = choice.getCost(meth);
       double futureExecutionTime = choice.getFutureExecutionTime(prevCompiler, futureTimeForMethod);
 
       double curActionTime = cost + futureExecutionTime;
+      
+      if (flag) {
+          bestActionTime = curActionTime;
+          bestActionChoice = choice;
+          bestCost = cost;
+          flag = false;
+      } else if (bestActionTime > curActionTime) {
+          bestActionTime = curActionTime;
+          bestActionChoice = choice;
+          bestCost = cost;
+      }
 
       AOSLogging.logger.recordControllerEstimateCostOpt(cmpMethod.getMethod(), choice.toString(), cost, curActionTime);
 
-      if (curActionTime < bestActionTime) {
+      /*if (curActionTime < bestActionTime) {
         bestActionTime = curActionTime;
         bestActionChoice = choice;
         bestCost = cost;
-      }
+      }*/
     }
 
-    // if the best action is the previous than we don't need to recompile
-    if (bestActionChoice == null) {
-      plan = null;
-    } else {
-        //try {
-        plan =
-                    //bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost);
+    if (hme.getMethod().currentTime <= 15) {
+        plan = 
             bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost, hme);
-        //} catch (CloneNotSupportedException ex) {
-            //Logger.getLogger(AnalyticModel.class.getName()).log(Level.SEVERE, null, ex);
-        //}
+    } else {
+        plan = null;
     }
     return plan;
+    
+    // if the best action is the previous than we don't need to recompile
+    /*if (bestActionChoice == null) {
+      plan = null;
+    } else {
+        plan =
+            bestActionChoice.makeControllerPlan(cmpMethod, prevCompiler, futureTimeForMethod, bestActionTime, bestCost, hme);
+    }
+    return plan;*/
   }
 
   /* check if a compiled method is outdated, then decide if it needs OSR from BASE to OPT

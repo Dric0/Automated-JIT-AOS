@@ -12,6 +12,8 @@ import java.util.Enumeration;
  * @author dric0
  */
 public class GATree {
+  private final boolean DEBUG = false;
+    
   private static final GATree INSTANCE0 = new GATree(0);
   private static final GATree INSTANCE1 = new GATree(1);
   private static final GATree INSTANCE2 = new GATree(2);
@@ -50,38 +52,38 @@ public class GATree {
   }
   
   synchronized public GATreeNode addChild(GAIndividual DNA, GAPopulation pop, GATreeNode currentNode, boolean rollback) {
-    System.out.println("\t\t\t\t\tInside addChild()");
+    if (DEBUG) System.out.println("\t\t\t\t\tInside addChild()");
     GATreeNode son = new GATreeNode(DNA, pop);
     GATreeNode current = currentNode;
         
     if (rollback) {
         // Need to rollback to the parent.
-        System.out.println("\t\t\t\t\tNeed to rollback to the parent.");
+        if (DEBUG) System.out.println("\t\t\t\t\tNeed to rollback to the parent.");
         current = currentNode.getParent();
     }
         
-    System.out.println("\t\t\t\t\tChecking if current node has a child.");
+    if (DEBUG) System.out.println("\t\t\t\t\tChecking if current node has a child.");
     if (current.getLeftChild() == null) {
         // There is no childs. Setting the new child as the left son.
-        System.out.println("\t\t\t\t\tThere is no childs. Setting the new child as the left son.");
+        if (DEBUG) System.out.println("\t\t\t\t\tThere is no childs. Setting the new child as the left son.");
         current.setLeftChild(son);
         son.setParent(currentNode);
 
     } else {
         // There is/are childs on the current node. Place new one as a brother.
-        System.out.println("\t\t\t\t\tThere is/are childs on the current node. Place new one as a brother.");
+        if (DEBUG) System.out.println("\t\t\t\t\tThere is/are childs on the current node. Place new one as a brother.");
         GATreeNode left = current.getLeftChild();
         while(true) {
             //GATreeNode left = currentNode.getLeftChild();
             if (left.getRightSibling() == null) {
                 // No right brother. Setting new node as right sibling.
-                System.out.println("\t\t\t\t\t\tNo right brother. Setting new node as right sibling.");
+                if (DEBUG) System.out.println("\t\t\t\t\t\tNo right brother. Setting new node as right sibling.");
                 left.setRightSibling(son);
                 son.setParent(current);
                 break;
             } else {
                 // There is a right brother. Pointing to it now.
-                System.out.println("\t\t\t\t\t\tThere is a right brother. Pointing to it now and search for the next brother.");
+                if (DEBUG) System.out.println("\t\t\t\t\t\tThere is a right brother. Pointing to it now and search for the next brother.");
                 left = left.getRightSibling();
                 //continue;
             }

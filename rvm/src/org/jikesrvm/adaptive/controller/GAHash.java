@@ -28,6 +28,8 @@ public class GAHash {
       map = new ConcurrentHashMap<Integer, GAWrapper>();
     }
     
+    public long elapsedTime;
+    
     /*public double checkExistence(int methodId) {
       GAWrapper tuple = (GAWrapper) map2.get(methodId);
       if (tuple != null) {
@@ -45,24 +47,33 @@ public class GAHash {
       return true;
     }
     
+    public double getPreviousSample(int methodId) {
+      GAWrapper tuple = (GAWrapper) map.get(methodId);
+      return tuple.getSamples();
+    }
+    
     public GATreeNode getNode(int methodId) {
-      System.out.println("Inside GAHash.getIndividual()");
       GAWrapper tuple = (GAWrapper) map.get(methodId);
       return tuple.getNode();
+    }
+    
+    public int getOptLevel(int methodId) {
+      GAWrapper tuple = (GAWrapper) map.get(methodId);
+      return tuple.getOptLevel();
     }
     
     public GAWrapper getValues(int methodId) {
       return (GAWrapper) map.get(methodId);
     }
     
-    public void add(int methodId, double numSamples, GATreeNode node) {
+    synchronized public void add(int methodId, double numSamples, GATreeNode node, int optLevel) {
       if (map.get(methodId) == null) {
         //System.out.println("Adding NEW key to hash map.");
-        map.putIfAbsent(methodId, new GAWrapper(numSamples, node));
+        map.putIfAbsent(methodId, new GAWrapper(numSamples, node, optLevel));
       } else {
         GAWrapper tuple = (GAWrapper) map.get(methodId);
         //System.out.println("Key " + methodId + " already in the hash map. Replacing " + tuple.getSamples() + " with the new numSamples (" + numSamples + ").");
-        map.replace(methodId, new GAWrapper(numSamples, node));
+        map.replace(methodId, new GAWrapper(numSamples, node, optLevel));
       }
       //map.putIfAbsent(methodId, numSamples);
     }

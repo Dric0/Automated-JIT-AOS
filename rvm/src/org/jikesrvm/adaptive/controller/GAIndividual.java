@@ -55,6 +55,12 @@ public class GAIndividual {
     public boolean OSR_GUARDED_INLINING;
     public boolean OSR_INLINE_POLICY;
     public boolean L2M_HANDLER_LIVENESS;
+    public boolean CONTROL_TURN_WHILES_INTO_UNTILS;
+    public boolean LOCAL_EXPRESSION_FOLDING;
+    public boolean SSA;
+    public boolean SSA_EXPRESSION_FOLDING;
+    public boolean SSA_REDUNDANT_BRANCH_ELIMINATION;
+    public boolean SSA_LOAD_ELIMINATION;
 
     int prevCompiler;
     
@@ -65,6 +71,28 @@ public class GAIndividual {
     public double sample;
     
     private double probability;
+    
+    public double baseSample; // Samples from execution with the baseline compiler.
+    
+    private double compilationRate = 0;
+    
+    private double speedUp = 0;
+    
+    public double getCompilationRate() {
+      return this.compilationRate;
+    }
+    
+    public void setCompilationRate(double compilationRate) {
+      this.compilationRate = compilationRate;
+    }
+    
+    public double getSpeedUp() {
+      return this.speedUp;
+    }
+    
+    public void setSpeedUp(double speedUp) {
+      this.speedUp = speedUp;
+    }
 
     int maxOptLevel = getMaxOptLevel();
     
@@ -79,9 +107,10 @@ public class GAIndividual {
       return fitness;
     }
     
-    public void setFitness(double numSamples) {
-      fitness = numSamples/maxSamples;
-      System.out.println("\tSetting new fitness: " + fitness);
+    public void setFitness(double fitness) {
+      //fitness = numSamples/maxSamples;
+      this.fitness = fitness;
+      System.out.println("\tNew fitness: " + this.fitness);
     }
     
     public GAIndividual() {//CompiledMethod cmpMethod) {
@@ -128,10 +157,14 @@ public class GAIndividual {
       //System.out.println("\tTesting String version of optOptions: " + GAOptions);
     }
     
+    public void createRootIndividual(int optLevel) {
+      initOptOption(optLevel);
+    }
+    
     public void createIndividual(int optLevel) {
       initOptOption(optLevel);
 
-      mutateBoolean(maxOptLevel);
+      mutateBoolean(optLevel);
     }
     
     public void initOptOption() {
@@ -232,6 +265,30 @@ public class GAIndividual {
         OSR_INLINE_POLICY = true;
      else
         OSR_INLINE_POLICY = false;
+     if (level >= 3)
+        CONTROL_TURN_WHILES_INTO_UNTILS = true;
+     else
+        CONTROL_TURN_WHILES_INTO_UNTILS = false;
+     if (level >= 3)
+        LOCAL_EXPRESSION_FOLDING = true;
+     else
+        LOCAL_EXPRESSION_FOLDING = false;
+     if (level >= 3)
+        SSA = true;
+     else
+        SSA = false;
+     if (level >= 3)
+        SSA_EXPRESSION_FOLDING = true;
+     else
+        SSA_EXPRESSION_FOLDING = false;
+     if (level >= 3)
+        SSA_REDUNDANT_BRANCH_ELIMINATION = true;
+     else
+        SSA_REDUNDANT_BRANCH_ELIMINATION = false;
+     if (level >= 3)
+        SSA_LOAD_ELIMINATION = true;
+     else
+        SSA_LOAD_ELIMINATION = false;
     
     }
     
@@ -337,109 +394,182 @@ public class GAIndividual {
     
     public boolean mutateBoolean(int optLevel) {
         
+      System.out.println("optLevel: " + optLevel);
+        
+      int n0 = 12;
+      int n1 = 8;
+      int n2 = 7;
+        
+      /*Randomizer rand = Randomizer.getInstance();
+      int INDEX;
+      if (optLevel == 0) {
+          INDEX = rand.nextInt(n0);
+          System.out.println("INDEX from mutateBoolean(): " + INDEX);
+      } else if (optLevel == 1) {
+          INDEX = rand.nextInt(n1);
+          System.out.println("INDEX from mutateBoolean(): " + INDEX + " + " + n0);
+          INDEX = INDEX + n0;
+      } else {
+          INDEX = rand.nextInt(n2);
+          System.out.println("INDEX from mutateBoolean(): " + INDEX + " + " + n0 + " + " + n1);
+          INDEX = INDEX + n0 + n1;
+      }*/
       Randomizer rand = Randomizer.getInstance();
       int INDEX;
       if (optLevel >= 0)
-          INDEX = rand.nextInt(12);
+          INDEX = rand.nextInt(24);
       else if (optLevel >= 1)
-          INDEX = rand.nextInt(20);
+          INDEX = rand.nextInt(56);
       else 
-          INDEX = rand.nextInt(21);
+          INDEX = rand.nextInt(98);
+      
+      //System.out.println("INDEX from mutateBoolean(): " + INDEX);
       
       if (optLevel >= 0) {
-        if (INDEX == 0) {
+        if (INDEX >= 0 && INDEX < 2) {
             //System.out.println("Inside mutateBoolean - GAOptOptions.java\nFREQ_FOCUS_EFFORT is the one at INDEX.");
             FIELD_ANALYSIS = !FIELD_ANALYSIS;
             return true;
         }
-        if (INDEX == 1) {
+        if (INDEX >= 2 && INDEX < 4) {
             INLINE = !INLINE;
             return true;
         }
-        if (INDEX == 2) {
+        if (INDEX >= 4 && INDEX < 6) {
             INLINE_GUARDED = !INLINE_GUARDED;
             return true;
         }
-        if (INDEX == 3) {
+        if (INDEX >= 6 && INDEX < 8) {
             INLINE_GUARDED_INTERFACES = !INLINE_GUARDED_INTERFACES;
             return true;
         }
-        if (INDEX == 4) {
+        if (INDEX >= 8 && INDEX < 10) {
             INLINE_PREEX = !INLINE_PREEX;
             return true;
         }
-        if (INDEX == 5) {
+        if (INDEX >= 10 && INDEX < 12) {
             LOCAL_CONSTANT_PROP = !LOCAL_CONSTANT_PROP;
             return true;
         }
-        if (INDEX == 6) {
+        if (INDEX >= 12 && INDEX < 14) {
             LOCAL_COPY_PROP = !LOCAL_COPY_PROP;
             return true;
         }
-        if (INDEX == 7) {
+        if (INDEX >= 14 && INDEX < 16) {
             LOCAL_CSE = !LOCAL_CSE;
             return true;
         }
-        if (INDEX == 8) {
+        if (INDEX >= 16 && INDEX < 18) {
             REORDER_CODE = !REORDER_CODE;
             return true;
         }
-        if (INDEX == 9) {
+        if (INDEX >= 18 && INDEX < 20) {
             H2L_INLINE_NEW = !H2L_INLINE_NEW;
             return true;
         }
-        if (INDEX == 10) {
+        if (INDEX >= 20 && INDEX < 22) {
             REGALLOC_COALESCE_MOVES = !REGALLOC_COALESCE_MOVES;
             return true;
         }
-        if (INDEX == 11) {
+        if (INDEX >= 22 && INDEX < 24) {
             REGALLOC_COALESCE_SPILLS = !REGALLOC_COALESCE_SPILLS;
             return true;
         }
       } else if (optLevel >= 1) {
-        if (INDEX == 12) {
+        if (INDEX >= 24 && INDEX < 28) {
             CONTROL_STATIC_SPLITTING = !CONTROL_STATIC_SPLITTING;
             return true;
         }
-        if (INDEX == 13) {
+        if (INDEX >= 28 && INDEX < 32) {
             ESCAPE_SCALAR_REPLACE_AGGREGATES = !ESCAPE_SCALAR_REPLACE_AGGREGATES;
             return true;
         }
-        if (INDEX == 14) {
+        if (INDEX >= 32 && INDEX < 36) {
             ESCAPE_MONITOR_REMOVAL = !ESCAPE_MONITOR_REMOVAL;
             return true;
         }
-        if (INDEX == 15) {
+        if (INDEX >= 36 && INDEX < 40) {
             REORDER_CODE_PH = !REORDER_CODE_PH;
             return true;
         }
-        if (INDEX == 16) {
+        if (INDEX >= 40 && INDEX < 44) {
             H2L_INLINE_WRITE_BARRIER = !H2L_INLINE_WRITE_BARRIER;
             return true;
         }
-        if (INDEX == 17) {
+        if (INDEX >= 44 && INDEX < 48) {
             H2L_INLINE_PRIMITIVE_WRITE_BARRIER = !H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
             return true;
         }
-        if (INDEX == 18) {
+        if (INDEX >= 48 && INDEX < 52) {
             OSR_GUARDED_INLINING = !OSR_GUARDED_INLINING;
             return true;
         }
-        if (INDEX == 19) {
+        if (INDEX >= 52 && INDEX < 56) {
             OSR_INLINE_POLICY = !OSR_INLINE_POLICY;
             return true;
         }
       } else if (optLevel >= 2) {
-        if (INDEX == 20) {
+        if (INDEX >= 56 && INDEX < 62) {
             L2M_HANDLER_LIVENESS = !L2M_HANDLER_LIVENESS;
             return true;
         }
+        if (INDEX >= 62 && INDEX < 68) {
+            CONTROL_TURN_WHILES_INTO_UNTILS = !CONTROL_TURN_WHILES_INTO_UNTILS;
+            return true;
+        }
+        if (INDEX >= 68 && INDEX < 74) {
+            LOCAL_EXPRESSION_FOLDING = !LOCAL_EXPRESSION_FOLDING;
+            return true;
+        }
+        if (INDEX >= 74 && INDEX < 80) {
+            SSA = !SSA;
+            return true;
+        }
+        if (INDEX >= 80 && INDEX < 86) {
+            if (SSA_EXPRESSION_FOLDING)
+                SSA_EXPRESSION_FOLDING = false;
+            else {
+                if (!SSA)
+                    SSA = true;
+                else
+                    SSA_EXPRESSION_FOLDING = true;
+            }
+            return true;
+        }
+        if (INDEX >= 86 && INDEX < 92) {
+            if (SSA_REDUNDANT_BRANCH_ELIMINATION)
+                SSA_REDUNDANT_BRANCH_ELIMINATION = false;
+            else {
+                if (!SSA)
+                    SSA = true;
+                else
+                    SSA_REDUNDANT_BRANCH_ELIMINATION = true;
+            }
+            return true;
+        }
+        if (INDEX >= 92 && INDEX < 98) {
+            if (SSA_LOAD_ELIMINATION)
+                SSA_LOAD_ELIMINATION = false;
+            else {
+                if (!SSA)
+                    SSA = true;
+                else
+                    SSA_LOAD_ELIMINATION = true;
+            }
+            return true;
+        }
+        
       }
       
       return false;
     }
     
     public void copy(GAIndividual orig) {
+        this.speedUp = orig.getSpeedUp();
+        this.compilationRate = orig.getCompilationRate();
+        this.sample = orig.sample;
+        this.fitness = orig.getFitness();
+        
         FIELD_ANALYSIS = orig.FIELD_ANALYSIS;
         INLINE = orig.INLINE;
         INLINE_GUARDED = orig.INLINE_GUARDED;

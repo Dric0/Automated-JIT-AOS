@@ -12,9 +12,8 @@
  */
 package org.jikesrvm.adaptive.controller;
 
+import java.util.Arrays;
 import java.util.Random;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import org.jikesrvm.VM;
 import org.jikesrvm.adaptive.recompilation.CompilerDNA;
 import org.jikesrvm.adaptive.util.AOSLogging;
@@ -85,7 +84,9 @@ public abstract class RecompilationStrategy {
     // Construct the compilation plan (varies depending on strategy)
     //CompilationPlan compPlan = createCompilationPlan((NormalMethod) method, optLevel, instPlan);
     CompilationPlan compPlan = GAcreateCompilationPlan((NormalMethod) method, method.getId(), optLevel, instPlan, hme);
-    System.out.println("Method's id: " + method.getId());
+    if (DEBUG) System.out.println("Method's id: " + method.getId());
+    //if (DEBUG) System.out.println("Compiled Method's id: " + method.getCurrentCompiledMethod().getId());
+    //if (DEBUG) System.out.println("Previous Compiled Method's id: " + method.getCurrentCompiledMethod().getId());
     
     // Create the controller plan
     return new ControllerPlan(compPlan,
@@ -128,16 +129,40 @@ public abstract class RecompilationStrategy {
                                  expectedCompilationTime,
                                  priority);
   }
+  
+  double futureMethodTime(HotMethodEvent hme) {
+    double numSamples = hme.getNumSamples();
+    double timePerSample = VM.interruptQuantum;
+    if (!VM.UseEpilogueYieldPoints) {
+      // NOTE: we take two samples per timer interrupt, so we have to
+      // adjust here (otherwise we'd give the method twice as much time
+      // as it actually deserves).
+      timePerSample /= 2.0;
+    }
+    if (Controller.options.mlCBS()) {
+      // multiple method samples per timer interrupt. Divide accordingly.
+      timePerSample /= VM.CBSMethodSamplesPerTick;
+    }
+    double timeInMethodSoFar = numSamples * timePerSample;
+    return timeInMethodSoFar;
+  }
 
-  //public int POPULATION_SIZE = 50;
+  private final boolean DEBUG = false;
   
   public CompilationPlan GAcreateCompilationPlan(NormalMethod method, int methodId, int optLevel,
                                                    InstrumentationPlan instPlan, HotMethodEvent hme) {
-    System.out.println("GAcreateCompilationPlan() - The optimization level to use in the plan: " + optLevel);
+    long startTime = System.nanoTime();  
+      
+    if (DEBUG) System.out.println("GAcreateCompilationPlan() - The optimization level to use in the plan: " + optLevel);
     
-    System.out.println("Initializing tree from opt level " + optLevel);
+    if (DEBUG) System.out.println("Initializing tree from opt level " + optLevel);
     
+    if (DEBUG) System.out.println("Compilation time for this method: " + hme.getCompiledMethod().getCompilationTime());
+    if (DEBUG) System.out.println("Number of instructions for this method: " + hme.getCompiledMethod().numberOfInstructions());
+    double compilationRate = hme.getCompiledMethod().numberOfInstructions()/hme.getCompiledMethod().getCompilationTime();
+    if (DEBUG) System.out.println("Compilation Rate: " + compilationRate);
     
+    //methodId = method.getCurrentCompiledMethod().getId();
     
     GAHash map = GAHash.getInstance();
     double recentSample = hme.getNumSamples();
@@ -152,309 +177,478 @@ public abstract class RecompilationStrategy {
     
     if (optLevel == 0) {
         tree = GATree.getInstance0();
-        System.out.println("The tree being used is the opt0.");
-        if (tree.getGARoot() != null) System.out.println("\tThe opt0 tree has its root.");
+        if (DEBUG) System.out.println("The tree being used is the opt0.");
+        //if (tree.getGARoot() != null) System.out.println("\tThe opt0 tree has its root.");
     } else if (optLevel == 1) {
         tree = GATree.getInstance1();
-        System.out.println("The tree being used is the opt1.");
-        if (tree.getGARoot() != null) System.out.println("\tThe opt1 tree has its root.");
+        if (DEBUG) System.out.println("The tree being used is the opt1.");
+        //if (tree.getGARoot() != null) System.out.println("\tThe opt1 tree has its root.");
     } else if (optLevel == 2) {
         tree = GATree.getInstance2();
-        System.out.println("The tree being used is the opt2.");
-        if (tree.getGARoot() != null) System.out.println("\tThe opt2 tree has its root.");
+        if (DEBUG) System.out.println("The tree being used is the opt2.");
+        //if (tree.getGARoot() != null) System.out.println("\tThe opt2 tree has its root.");
     }
     
     // Checking the previous optLevel.
-    System.out.println("---> Checking if it's the first entry of this method.");
+    if (DEBUG) System.out.println("---> Checking if it's the first entry of this method.");
     //if (method.previousOptLevel != -1 && method.previousOptLevel != optLevel) { // Se previousOptLevel for -1 -> nao foi inicializado ainda.
                                                                                 // Se previousOptLevel for diferente de optLevel -> mudou o level.
-    if (method.previousOptLevel != -1) {
-        System.out.println("---> The previousOptLevel is different than -1 -> It is NOT the first entry for this method.");
-        
-        System.out.println("* Setting sample from the individual at the treeNode with recentSample(" + recentSample + ") *");
-        method.treeNode.getDNA().sample = recentSample;
-        
-        System.out.println("---> Checking if the optLevel changed.");
-        if (method.previousOptLevel != optLevel) {
-        
-            int previousOptLevel = method.previousOptLevel;
-            System.out.println("\tThe optLevel DID changed. Current: " + optLevel + ", Previous: " + previousOptLevel);
+    if (recentSample > 1) {
+        if (DEBUG) System.out.println("* We only consider methods for searching with sampling > 1 (" + recentSample + ") *");
 
-            System.out.println("\tChecking the performance. Previous sample from old opt level: " + method.sampleRecorded/*getSamplesRecorded(previousOptLevel)*/ + ", recent sample: " + recentSample);
-            // TODO - Deixar um unico samplesRecorded - acho que nao tem necessidade de um pra cada level.
-            //if (recentSample > method.getSamplesRecorded(previousOptLevel)) {
-            if (recentSample > method.sampleRecorded) {
-                System.out.println("\t\tPerformance is worse than before -> Need to use the parent's node (in case there is one) population");
-
-                //if (method.getTreeNode(previousOptLevel).getParent() == null) {
-                if (method.treeNode.getParent() == null) {
-                    System.out.println("\t\t\tThere is no parent (it is the root) -> Getting the root of the actual opt level tree.");
-                    System.out.println("\t\t\tCurrent tree node for this method: " + method.getTreeNode(previousOptLevel) + "/" + method.treeNode);
-                    method.setTreeNode(optLevel, tree.getGARoot());
-                    method.treeNode = tree.getGARoot();
-                    System.out.println("\t\t\tTree root (it will be used as new node): " + tree.getGARoot());
-                    System.out.println("\t\t\tNew tree node for this method: " + method.getTreeNode(optLevel) + "/" + method.treeNode);
-                } else {
-                    System.out.println("\t\t\tThere IS a parent for the current node -> Need to rollback.");
-                    System.out.println("\t\t\tThe opt level changed so we need to rollback to the parent and use him to create new node in the new tree.");
-                    
-                    //System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
-                    //method.treeNode = method.treeNode.getParent();
-                    //System.out.println("\t\t\tRollback - New tree node for this method (the parent): " + method.treeNode);
-                    
-                    System.out.println("\t\t\tCreating new node from the parent.");
-                    
-                    // TODO - Create new node. check
-                    GATreeNode newNode = generateNode(tree, method, optLevel, true);
-                    System.out.println("\t\tMaking method point to created node.");
-                    System.out.println("\t\tOld tree node for this method: " + method.treeNode);
-                    method.treeNode = newNode;
-                    System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
-                    
-                }
-            } else {
-                System.out.println("\t\tPerformance is better than before -> Search for childs or create new one.");
-                System.out.println("\t\tAs the opt level changed, we will use this node to create a new one and put in the NEW tree.");
-
-                System.out.println("\t\tGenerating new node (Using the new optLevel already)");
-                // TODO - Create new node. check
-                GATreeNode newNode = generateNode(tree, method, optLevel, false);
-                System.out.println("\t\tMaking method point to created node.");
-                System.out.println("\t\tOld tree node for this method: " + method.treeNode);
-                method.treeNode = newNode;
-                System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
-
-            }
-        } else {
-            System.out.println("\tThe optLevel did <NOT> change. Current: " + optLevel);
+        if (DEBUG) System.out.println("Checking if the methodId already is on the map.");
+        if (map.checkExistence(methodId)) {
+            if (DEBUG) System.out.println("-> methodId already on the map (NOT the first entry for this method).");
+        //if (method.previousOptLevel != -1) {
+            //if (DEBUG) System.out.println("---> The previousOptLevel is different than -1 -> It is NOT the first entry for this method.");
             
-            System.out.println("\tChecking the performance. Previous sample from old opt level: " + method.sampleRecorded + ", recent sample: " + recentSample);
-            if (recentSample > method.sampleRecorded) {
-                System.out.println("\t\tPerformance is worse than before -> Need to rollback if it's not the root, if is the root need to search child OR create new node.");
-                
-                if (method.treeNode.getParent() == null) {
-                    System.out.println("\t\t\tThere is no parent (it is the root) -> Need to breadth search its childs OR create new child node.");
-                    if (method.treeNode.getLeftChild() == null) {
-                        System.out.println("\t\t\t\tThere is no child node to search -> Creating new one.");
-                        
-                        // TODO - Create new node. check
-                        GATreeNode newNode = generateNode(tree, method, optLevel, false);
-                        System.out.println("\t\tMaking method point to created node.");
-                        System.out.println("\t\tOld tree node for this method: " + method.treeNode);
-                        method.treeNode = newNode;
-                        System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
-                        
+            /*if (DEBUG) System.out.println("Setting the compilation rate to the individual(DNA) used: " + compilationRate);
+            method.treeNode.getDNA().setCompilationRate(compilationRate);
+            double speedUp = method.initialFitness/recentSample; 
+            if (DEBUG) System.out.println("Setting the speedUp (sample based) - baseline samples(" + method.initialFitness + ") / aos samples(" + recentSample + "): " + speedUp);
+            method.treeNode.getDNA().setSpeedUp(speedUp);
+            */
+            for (int i = 0; i < map.getNode(methodId).getPopulation().getPopulationSize(); i++) {
+                if (map.getNode(methodId).getDNA() == map.getNode(methodId).getPopulation().individuals[i]) {
+                //if (method.treeNode.getDNA() == method.treeNode.getPopulation().individuals[i]) {
+                    if (DEBUG) System.out.println("********** The current DNA node is index " + i + " from the node's population.");
+
+                }
+            }
+            System.out.println("Inside recompilation strategy -> Method's id from hme: " + hme.getMethod().getId());
+            System.out.println("Method's id from 'method': " + methodId);
+            method.currentTime++;
+            
+            /*
+            double estimateTime = futureMethodTime(hme);
+            if (DEBUG) System.out.println("Estimate time for this method: " + estimateTime);
+            
+            // Calculating fitness for every individual for this method's node.
+            if (DEBUG) System.out.println("-> Calculating and setting fitness for every individual for this method's node.");
+            if (DEBUG) System.out.println("-> Building the distance matrix.");
+            double [][] distance = distanceMatrix(method.treeNode.getPopulation());
+            if (DEBUG) System.out.println("-> Calculating the strenght of every individual.");
+            double [] strength = calculateStrength(method.treeNode.getPopulation());
+            if (DEBUG) System.out.println("-> Calculating the raw fitness of every individual.");
+            double[] rawFitness = calculateRawFitness(method.treeNode.getPopulation(), strength);
+            if (DEBUG) System.out.println("-> Setting fitness for every individual (raw fitness + kDistance).");
+            settingFitnessWithDistance(distance, rawFitness , method.treeNode.getPopulation());
+            */
+            
+            double speedUp = method.sampleRecorded/recentSample; 
+            if (DEBUG) System.out.println("Setting the speedUp (sample based) - baseline samples(" + method.sampleRecorded + ") / aos samples(" + recentSample + "): " + speedUp);
+            if (DEBUG) System.out.println("Setting the speedUp as fitness - old fitness: " + method.treeNode.getDNA().getFitness());
+            method.treeNode.getDNA().setFitness(speedUp);
+            if (DEBUG) System.out.println("New fitness: " + method.treeNode.getDNA().getFitness());
+            
+            if (DEBUG) System.out.println("* Setting sample from the individual at the treeNode with recentSample(" + recentSample + ") *");
+            method.treeNode.getDNA().sample = recentSample;
+
+            if (DEBUG) System.out.println("---> Checking if the optLevel changed.");
+            if (map.getOptLevel(methodId) != optLevel) {
+            //if (method.previousOptLevel != optLevel) {
+
+                int previousOptLevel = method.previousOptLevel;
+                if (DEBUG) System.out.println("\tThe optLevel DID changed. Current: " + optLevel + ", Previous: " + previousOptLevel);
+
+                if (DEBUG) System.out.println("\tChecking the performance. Previous sample from old opt level: " + method.sampleRecorded/*getSamplesRecorded(previousOptLevel)*/ + ", recent sample: " + recentSample);
+                if (recentSample > map.getPreviousSample(methodId)) {
+                //if (recentSample > method.sampleRecorded) {
+                    if (DEBUG) System.out.println("\t\tPerformance is worse than before -> Need to use the parent's node (in case there is one) population");
+
+                    if (map.getNode(methodId).getParent() == null) {
+                    //if (method.treeNode.getParent() == null) {
+                        if (DEBUG) System.out.println("\t\t\tThere is no parent (it is the root) -> Getting the root of the actual opt level tree.");
+                        if (DEBUG) System.out.println("\t\t\tCurrent tree node for this method: " + method.getTreeNode(previousOptLevel) + "/" + method.treeNode);
+                        double previousSample = map.getPreviousSample(methodId);
+                        map.add(methodId, previousSample, tree.getGARoot(), optLevel);
+                        method.treeNode = tree.getGARoot();
+                        if (DEBUG) System.out.println("\t\t\tTree root (it will be used as new node): " + tree.getGARoot());
+                        if (DEBUG) System.out.println("\t\t\tNew tree node for this method: " + method.getTreeNode(optLevel) + "/" + method.treeNode);
+
+                        /*if (tree.getGARoot().getLeftChild() != null) {
+                            if (DEBUG) System.out.println("\t\t\tThe root node from new tree has childs -> Set to one of them.");
+                            method.treeNode = tree.getGARoot().getLeftChild();
+                            if (DEBUG) System.out.println("\t\t\tNew tree node for this method: " + method.treeNode);
+                        } else {
+                            if (DEBUG) System.out.println("\t\t\tThe root node from new tree has NO childs -> Create new one from new root.");
+                            GATreeNode newNode = generateNode(tree, method, optLevel, false);
+                            if (DEBUG) System.out.println("\t\t\tMaking method point to created node.");
+                            if (DEBUG) System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
+                            method.treeNode = newNode;
+                            if (DEBUG) System.out.println("\t\t\tNew tree node for this method (recently created): " + method.treeNode);
+                        }*/
+
+                        if (DEBUG) System.out.println("Retrieving Samples from variable in RVMMethod - Discarding the recentSample as we just rollback. Samples: " + method.sampleRecorded);
+
                     } else {
-                        System.out.println("\t\t\t\tThere IS child node to search -> Setting method to the child.");
-                        System.out.println("\t\t\tOld tree node for this method: " + method.treeNode + ". Tree node: " + tree.getGARoot());
-                        method.treeNode = method.treeNode.getLeftChild();
-                        System.out.println("\t\t\tNew tree node for this method: " + method.treeNode + ". Tree node: " + tree.getGARoot());
-                    }
-                } else {
-                    System.out.println("\t\t\tThere IS a parent (current node is NOT the root) -> Need to rollback to the parent and search another path OR create new node.");
-                    
-                    System.out.println("\t\t\tChecking if the parent has more childs.");
-                    if (method.treeNode.getRightSibling() == null) {
-                        System.out.println("\t\t\t\tThere are NO brother for this node -> Need to create new node.");
-                        //method.treeNode = method.treeNode.getParent();
-                        
+                        if (DEBUG) System.out.println("\t\t\tThere IS a parent for the current node -> Need to rollback.");
+                        if (DEBUG) System.out.println("\t\t\tThe opt level changed so we need to rollback to the parent and use him to create new node in the new tree.");
+
+                        /*if (method.treeNode.getParent().getDNA() == method.treeNode.getPopulation().individuals[0]) {
+                            if (DEBUG) System.out.println("\t\t\tThe parent is the root from the old level tree -> Setting to the new tree's root");
+                            method.treeNode = tree.getGARoot();
+                            if (tree.getGARoot().getLeftChild() != null) {
+                                if (DEBUG) System.out.println("\t\t\tThere is/are childs from the new tree's node -> Setting this method to left-most child.");
+                                method.treeNode = method.treeNode.getLeftChild();
+                            } else {
+                                if (DEBUG) System.out.println("\t\t\tThere are NO childs from the new tree's node. Creating new one.");
+                                GATreeNode newNode = generateNode(tree, method, optLevel, false);
+                                if (DEBUG) System.out.println("\t\t\tMaking method point to created node.");
+                                if (DEBUG) System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
+                                method.treeNode = newNode;
+                                if (DEBUG) System.out.println("\t\t\tNew tree node for this method (recently created): " + method.treeNode);
+                            }
+                        } else {
+                            if (DEBUG) System.out.println("\t\t\tThe parent is NOT the root from the old level tree -> Rollback to the parent to create new node and insert in the new tree.");
+                            if (DEBUG) System.out.println("\t\t\tCreating new node from the parent.");
+                            GATreeNode newNode = generateNode(tree, method, optLevel, true);
+                            if (DEBUG) System.out.println("\t\t\tMaking method point to created node.");
+                            if (DEBUG) System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
+                            method.treeNode = newNode;
+                            if (DEBUG) System.out.println("\t\t\tNew tree node for this method (recently created): " + method.treeNode);
+                        }*/
+
+                        if (DEBUG) System.out.println("\t\t\tCreating new node from the parent.");
+
                         // TODO - Create new node. check
                         GATreeNode newNode = generateNode(tree, method, optLevel, true);
-                        System.out.println("\t\tMaking method point to created node.");
-                        System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                        if (DEBUG) System.out.println("\t\tMaking method point to created node.");
+                        if (DEBUG) System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                        double previousSample = map.getPreviousSample(methodId);
+                        map.add(methodId, previousSample, newNode, optLevel);
                         method.treeNode = newNode;
-                        System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
+                        if (DEBUG) System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
                         
-                    } else {
-                        System.out.println("\t\t\t\tThere is a brother for this node -> Pointing method to it.");
-                        System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
-                        method.treeNode = method.treeNode.getRightSibling();
-                        System.out.println("\t\t\tNew tree node for this method (the right brother): " + method.treeNode);
+                        if (DEBUG) System.out.println("Retrieving Samples from variable in RVMMethod - Discarding the recentSample as we just rollback. Samples: " + method.sampleRecorded);
+
                     }
-                }
-                
-            } else {
-                System.out.println("\t\tPerformance is better than before -> Need to go to child node (if there is one) OR create new node.");
-                
-                if (method.treeNode.getLeftChild() == null) {
-                    System.out.println("\t\t\tThere is no child node -> Need to create new one.");
+                } else {
+                    if (DEBUG) System.out.println("\t\tPerformance is better than before -> Search for childs or create new one.");
+                    if (DEBUG) System.out.println("\t\tAs the opt level changed, we will use this node to create a new one and put in the NEW tree.");
+
+                    if (DEBUG) System.out.println("\t\t\t-> Current DNA's speedUp: " + method.treeNode.getDNA().getSpeedUp() + ", CompRate: " + method.treeNode.getDNA().getCompilationRate());
                     
+                    if (DEBUG) System.out.println("\t\tGenerating new node (Using the new optLevel already)");
                     // TODO - Create new node. check
                     GATreeNode newNode = generateNode(tree, method, optLevel, false);
-                    System.out.println("\t\tMaking method point to created node.");
-                    System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                    if (DEBUG) System.out.println("\t\tMaking method point to created node.");
+                    if (DEBUG) System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                    map.add(methodId, recentSample, newNode, optLevel);
                     method.treeNode = newNode;
-                    System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
-                    
-                } else {
-                    System.out.println("\t\t\tThere IS a child node -> Need to set is as the new one.");
-                    
-                    System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
-                    method.treeNode = method.treeNode.getLeftChild();
-                    System.out.println("\t\t\tNew tree node for this method (left-most child): " + method.treeNode);
-                }
-                
-            }
-             
-        }
-        
-        System.out.println("Retrieving Samples from variable in RVMMethod. Samples: " + method.sampleRecorded);
-        
-        GAIndividual DNA = method.treeNode.getDNA();
-        
-        System.out.println("Creating new optOptions[] to receive the DNA.");
-        OptOptions options = new OptOptions();
-        int maxOptLevel = getMaxOptLevel();
-        OptOptions[] _opt = new OptOptions[maxOptLevel + 1];
-        String[] optCompilerOptions = Controller.getOptCompilerOptions();
-        for (int i = 0; i <= maxOptLevel; i++) {
-          _opt[i] = options.dup();
-          _opt[i].setOptLevel(i);               // set optimization level specific optimizations
-          processCommandLineOptions(_opt[i], i, maxOptLevel, optCompilerOptions);
-        }
-        System.out.println("New optOptions[] created -> Cloning DNA parameters into it.");
-        
-        cloneOptOptions(_opt, DNA, optLevel);
-        System.out.println("Cloning completed -> Returning to Jikes the new optOptions(_opt)\n\n");
+                    if (DEBUG) System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
 
-        return new CompilationPlan(method, _optPlans[optLevel], null, _opt[optLevel]);
-        
-    //} else if (method.getTreeNode(optLevel) == null) {
-    } else if (method.treeNode == null) {
-        System.out.println("No tree node set at this method (first entry). Need to make it point to the root of the current opt level(" + optLevel + ").");
-        
-        System.out.println("\tTree root -> " + tree.getGARoot());
-        method.setTreeNode(optLevel, tree.getGARoot());
-        method.treeNode = tree.getGARoot();
-        System.out.println("\tSetting tree node -> " + method.getTreeNode(optLevel));
-        System.out.println("\tSetting the first record of samples for this method - " + recentSample + " samples.");
-        method.setSamplesRecorded(optLevel, recentSample);
-        method.sampleRecorded = recentSample;
-        
-        System.out.println("\tSetting the current opt level used at this method.");
-        method.previousOptLevel = optLevel;
-        
-        System.out.println("\tReturning the standard compilation plan for this method.\n\n");
-        return new CompilationPlan(method, _optPlans[optLevel], null, _options[optLevel]);
+                    if (DEBUG) System.out.println("\t\tSetting the recentSample into the method variable. Sample recorded: " + method.sampleRecorded + ", Recent sample: " + recentSample);
+                    method.sampleRecorded = recentSample;
+                    if (DEBUG) System.out.println("\t\tRetrieving Samples from variable in RVMMethod. Samples: " + method.sampleRecorded);
+                }
+            } else {
+                if (DEBUG) System.out.println("\tThe optLevel did <NOT> change. Current: " + optLevel);
+
+                if (DEBUG) System.out.println("\tChecking the performance. Previous sample from old opt level: " + method.sampleRecorded + ", recent sample: " + recentSample);
+                if (recentSample > map.getPreviousSample(methodId)) {
+                //if (recentSample > method.sampleRecorded) {
+                    if (DEBUG) System.out.println("\t\tPerformance is worse than before -> Need to rollback if it's not the root, if is the root need to search child OR create new node.");
+
+                    if (map.getNode(methodId).getParent() == null) {
+                    //if (method.treeNode.getParent() == null) {
+                        if (DEBUG) System.out.println("\t\t\tThere is no parent (it is the root) -> Need to breadth search its childs OR create new child node.");
+                        if (map.getNode(methodId).getLeftChild() == null) {
+                        //if (method.treeNode.getLeftChild() == null) {
+                            if (DEBUG) System.out.println("\t\t\t\tThere is no child node to search -> Creating new one.");
+
+                            // TODO - Create new node. check
+                            GATreeNode newNode = generateNode(tree, method, optLevel, false);
+                            if (DEBUG) System.out.println("\t\tMaking method point to created node.");
+                            if (DEBUG) System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                            double previousSample = map.getPreviousSample(methodId);
+                            map.add(methodId, previousSample, newNode, optLevel);
+                            method.treeNode = newNode;
+                            if (DEBUG) System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
+
+                        } else {
+                            if (DEBUG) System.out.println("\t\t\t\tThere IS child node to search -> Setting method to the child.");
+                            if (DEBUG) System.out.println("\t\t\tOld tree node for this method: " + method.treeNode + ". Tree node: " + tree.getGARoot());
+                            double previousSample = map.getPreviousSample(methodId);
+                            map.add(methodId, previousSample, tree.getGARoot().getLeftChild(), optLevel);
+                            method.treeNode = method.treeNode.getLeftChild();
+                            if (DEBUG) System.out.println("\t\t\tNew tree node for this method: " + method.treeNode + ". Tree node: " + tree.getGARoot());
+                        }
+                        
+                        if (DEBUG) System.out.println("Retrieving Samples from variable in RVMMethod - Discarding the recentSample as we just rollback. Samples: " + method.sampleRecorded);
+                    
+                    } else {
+                        if (DEBUG) System.out.println("\t\t\tThere IS a parent (current node is NOT the root) -> Need to rollback to the parent and search another path OR create new node.");
+
+                        if (DEBUG) System.out.println("\t\t\t-> Current DNA's speedUp: " + method.treeNode.getDNA().getSpeedUp() + ", CompRate: " + method.treeNode.getDNA().getCompilationRate());
+                        
+                        if (DEBUG) System.out.println("\t\t\tChecking if the parent has more childs.");
+                        if (map.getNode(methodId).getRightSibling() == null) {
+                        //if (method.treeNode.getRightSibling() == null) {
+                            if (DEBUG) System.out.println("\t\t\t\tThere are NO brother for this node -> Need to create new node.");
+                            //method.treeNode = method.treeNode.getParent();
+
+                            // TODO - Create new node. check
+                            GATreeNode newNode = generateNode(tree, method, optLevel, true);
+                            if (DEBUG) System.out.println("\t\tMaking method point to created node.");
+                            if (DEBUG) System.out.println("\t\tOld tree node for this method: " + method.treeNode);
+                            double previousSample = map.getPreviousSample(methodId);
+                            map.add(methodId, previousSample, newNode, optLevel);
+                            method.treeNode = newNode;
+                            if (DEBUG) System.out.println("\t\tNew tree node for this method (recently created): " + method.treeNode);
+                            
+                            if (DEBUG) System.out.println("Retrieving Samples from variable in RVMMethod - Discarding the recentSample as we just rollback. Samples: " + method.sampleRecorded);
+
+                        } else {
+                            if (DEBUG) System.out.println("\t\t\t\tThere is a brother for this node -> Pointing method to it.");
+                            if (DEBUG) System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
+                            double previousSample = map.getPreviousSample(methodId);
+                            GATreeNode rightSibling = map.getNode(methodId).getRightSibling();
+                            map.add(methodId, previousSample, rightSibling, optLevel);
+                            method.treeNode = method.treeNode.getRightSibling();
+                            if (DEBUG) System.out.println("\t\t\tNew tree node for this method (the right brother): " + method.treeNode);
+                            
+                            if (DEBUG) System.out.println("Retrieving Samples from variable in RVMMethod - Discarding the recentSample as we just rollback. Samples: " + method.sampleRecorded);
+                        }
+                    }
+
+                } else {
+                    if (DEBUG) System.out.println("\t\tPerformance is better than before -> Need to go to child node (if there is one) OR create new node.");
+
+                    if (map.getNode(methodId).getLeftChild() == null) {
+                    //if (method.treeNode.getLeftChild() == null) {
+                        if (DEBUG) System.out.println("\t\t\tThere is no child node -> Need to create new one.");
+
+                        // TODO - Create new node. check
+                        GATreeNode newNode = generateNode(tree, method, optLevel, false);
+                        if (DEBUG) System.out.println("\t\t\tMaking method point to created node.");
+                        if (DEBUG) System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
+                        map.add(methodId, recentSample, newNode, optLevel);
+                        method.treeNode = newNode;
+                        if (DEBUG) System.out.println("\t\t\tNew tree node for this method (recently created): " + method.treeNode);
+                        
+                        if (DEBUG) System.out.println("\t\t\tSetting the recentSample into the method variable. Sample recorded: " + method.sampleRecorded + ", Recent sample: " + recentSample);
+                        method.sampleRecorded = recentSample;
+                        if (DEBUG) System.out.println("\t\t\tRetrieving Samples from variable in RVMMethod. Samples: " + method.sampleRecorded);
+
+                    } else {
+                        if (DEBUG) System.out.println("\t\t\tThere IS a child node -> Need to set is as the new one.");
+
+                        if (DEBUG) System.out.println("\t\t\tOld tree node for this method: " + method.treeNode);
+                        GATreeNode leftChild = map.getNode(methodId).getLeftChild();
+                        map.add(methodId, recentSample, leftChild, optLevel);
+                        method.treeNode = method.treeNode.getLeftChild();
+                        if (DEBUG) System.out.println("\t\t\tNew tree node for this method (left-most child): " + method.treeNode);
+                        
+                        if (DEBUG) System.out.println("\t\t\tSetting the recentSample into the method variable. Sample recorded: " + method.sampleRecorded + ", Recent sample: " + recentSample);
+                        method.sampleRecorded = recentSample;
+                        if (DEBUG) System.out.println("\t\t\tRetrieving Samples from variable in RVMMethod. Samples: " + method.sampleRecorded);
+                    }
+
+                }
+
+            }
+
+            // FIX-ME: If rollback happened -> The recentSample should be discarded because we will use the father's
+            /*if (DEBUG) System.out.println("Setting the recentSample into the method variable. Sample recorded: " + method.sampleRecorded + ", Recent sample: " + recentSample);
+            method.sampleRecorded = recentSample;
+            if (DEBUG) System.out.println("Retrieving Samples from variable in RVMMethod. Samples: " + method.sampleRecorded);
+            */
+            
+            if (DEBUG) System.out.println("\tSetting the current opt level used at this method.");
+            method.previousOptLevel = optLevel;
+            if (map.getOptLevel(methodId) == 2) {
+                optLevel = 1;
+            }
+            
+            GAIndividual DNA = map.getNode(methodId).getDNA();
+            //GAIndividual DNA = method.treeNode.getDNA();
+            
+            OptOptions[] _opt = compilationPlanResult();
+            if (DEBUG) System.out.println("Starting cloning the optOptions to return the options produced by GA.");
+            cloneOptOptions(_opt, DNA, map.getOptLevel(methodId));
+            if (DEBUG) System.out.println("Cloning completed -> Returning to Jikes the new optOptions(_opt)\n\n");
+            
+            long stopTime = System.nanoTime();
+            map.elapsedTime += stopTime - startTime;
+            //long elapsedTime = stopTime - startTime;
+            //System.out.println(map.elapsedTime);
+
+            return new CompilationPlan(method, _optPlans[optLevel], null, _opt[optLevel]);
+
+        //} else if (method.getTreeNode(optLevel) == null) {
+        } else if (method.treeNode == null) {
+            if (DEBUG) System.out.println("No tree node set at this method (first entry). Need to make it point to the root of the current opt level(" + optLevel + ").");
+
+            if (DEBUG) System.out.println("\tSaving the 1st sample collected (from base compiler).");
+            method.initialFitness = recentSample;
+            
+            if (DEBUG) System.out.println("\tNEW: Adding methodId to the map.");
+            if (DEBUG) System.out.println("\tTree root -> " + tree.getGARoot());
+            method.treeNode = tree.getGARoot();
+            map.add(methodId, recentSample, tree.getGARoot(), optLevel);
+            if (DEBUG) System.out.println("\tSetting tree node -> " + method.treeNode);
+            if (DEBUG) System.out.println("\tSetting the first record of samples for this method - " + recentSample + " samples.");
+            method.sampleRecorded = recentSample;
+
+            if (DEBUG) System.out.println("\tSetting the current opt level used at this method.");
+            method.previousOptLevel = optLevel;
+            
+            method.currentTime++;
+            
+            /*if (DEBUG) System.out.println("Setting the compilation rate to the individual(DNA) used: " + compilationRate);
+            method.treeNode.getDNA().setCompilationRate(compilationRate);
+            double speedUp = 1; 
+            if (DEBUG) System.out.println("Setting the speedUp as 1 (the baseline value).");
+            method.treeNode.getDNA().setSpeedUp(speedUp);*/
+            
+            // Calculating fitness for every individual for this method's node.
+            /*if (DEBUG) System.out.println("-> Calculating and setting fitness for every individual for this method's node.");
+            if (DEBUG) System.out.println("-> Building the distance matrix.");
+            double [][] distance = distanceMatrix(method.treeNode.getPopulation());
+            if (DEBUG) System.out.println("-> Calculating the strenght of every individual.");
+            double [] strength = calculateStrength(method.treeNode.getPopulation());
+            if (DEBUG) System.out.println("-> Calculating the raw fitness of every individual.");
+            double[] rawFitness = calculateRawFitness(method.treeNode.getPopulation(), strength);
+            if (DEBUG) System.out.println("-> Setting fitness for every individual (raw fitness + kDistance).");
+            settingFitnessWithDistance(distance, rawFitness , method.treeNode.getPopulation());
+            */
+            
+            
+            GAIndividual DNA = map.getNode(methodId).getDNA();
+            //GAIndividual DNA = method.treeNode.getDNA();
+            
+            OptOptions[] _opt = compilationPlanResult();
+            if (DEBUG) System.out.println("Starting cloning the optOptions to return the options produced by GA.");
+            cloneOptOptions(_opt, DNA, optLevel);
+            if (DEBUG) System.out.println("Cloning completed -> Returning to Jikes the new optOptions(_opt) - The DNA used is in the root.\n\n");
+
+            long stopTime = System.nanoTime();
+            map.elapsedTime += stopTime - startTime;
+            //long elapsedTime = stopTime - startTime;
+            //VM.sysWriteln(map.elapsedTime);
+            
+            return new CompilationPlan(method, _optPlans[optLevel], null, _opt[optLevel]);    
+            
+            //if (DEBUG) System.out.println("\tReturning the standard compilation plan for this method.\n\n");
+            //return new CompilationPlan(method, _optPlans[optLevel], null, _options[optLevel]);
+        }
     }
-    
-    
-    
-    
+    if (DEBUG) System.out.println("\tAs the recentSample(" + recentSample + ") is < 1: Returning the standard compilation plan for this method.\n\n");
+
     //----------------------------------------------OLD
+    
+    long stopTime = System.nanoTime();
+    map.elapsedTime += stopTime - startTime;
+    //long elapsedTime = stopTime - startTime;
+    //System.out.println(map.elapsedTime);
     
     return new CompilationPlan(method, _optPlans[optLevel], null, _options[optLevel]);
   }
   
-  public GATreeNode generateNode(GATree tree, NormalMethod method, int optLevel, boolean rollback) {
-    System.out.println("~~~/~~~ Inside new generateNode()");
-      
-    // Coping population into new one.
-    System.out.println("~~~/~~~ Creating pop and coping population from current node at method.");
-    GAPopulation orig = method.treeNode.getPopulation();
-    System.out.println("~~~/~~~ Checking if rollback is needed.");
-    if (rollback) {
-        System.out.println("~~~/~~~/~~~ Rollback is needed -> Coping population from the father.");
-        orig = method.treeNode.getParent().getPopulation();
+  public OptOptions[] compilationPlanResult() {
+    if (DEBUG) System.out.println("Creating new optOptions[] to receive the DNA.");
+    OptOptions options = new OptOptions();
+    int maxOptLevel = getMaxOptLevel();
+    OptOptions[] _opt = new OptOptions[maxOptLevel + 1];
+    String[] optCompilerOptions = Controller.getOptCompilerOptions();
+    for (int i = 0; i <= maxOptLevel; i++) {
+        _opt[i] = options.dup();
+        _opt[i].setOptLevel(i);               // set optimization level specific optimizations
+        processCommandLineOptions(_opt[i], i, maxOptLevel, optCompilerOptions);
     }
-    GAPopulation clonedPop = new GAPopulation(orig);
-    System.out.println("~~~/~~~ Copy population created.");
-      
-    // Selecting two individuals to crossover.
-    System.out.println("~~~/~~~ Selecting two individuals from the cloned pop using tournament.");
-    tournamentResult result = binaryTournament(clonedPop);
-    GAIndividual firstIndividual = result.getIndividual();
-    int INDEX1 = result.getFirstIndex();
-    System.out.println("~~~/~~~ First individual selected from binary tournament. It has the INDEX: " + INDEX1 + " from the cloned pop.");
-    result = binaryTournament(clonedPop);
-    GAIndividual secondIndividual = result.getIndividual();
-    int INDEX2 = result.getFirstIndex();
-    System.out.println("~~~/~~~ Second individual selected from binary tournament. It has the INDEX: " + INDEX2 + " from the cloned pop.");
-    
-    // Crossover
-    System.out.println("~~~/~~~ Performing crossover on the two individuals.");
-    GAIndividual newIndividual = crossover(clonedPop, firstIndividual, secondIndividual);
-    System.out.println("~~~/~~~ Replacing one of the parents with the new individual generanted from crossover.");
-    clonedPop.replaceIndividual(INDEX2, newIndividual);
-    
-    // Mutating newIndividual (or not, depdends on mutation rate).
-    System.out.println("~~~/~~~ Mutating newIndividual (or not, depdends on mutation rate).");
-    System.out.println("~~~/~~~ *Using the optLevel from the new tree (IF the opt level changed) <- VERIFY");
-    mutate(newIndividual, optLevel);
-    
-    // Adding new node to the tree.
-    System.out.println("~~~/~~~ Adding new node in the tree and returning it.");
-    GATreeNode newNode = tree.addChild(newIndividual, clonedPop, method.treeNode, rollback);
-    System.out.println("~~~/~~~ Node added to the tree. Tree level: " + optLevel);
-    System.out.println("~~~/~~~ Returning new node.");
-    return newNode;
+    if (DEBUG) System.out.println("New optOptions[] created -> Returning it to clone.");
+    return _opt;
   }
   
-  public void generateNode(GATree tree, NormalMethod method, int methodId, int optLevel, double recentSample, boolean rollback) {
-    //GATree tree = GATree.getInstance();
+  public GATreeNode generateNode(GATree tree, NormalMethod method, int optLevel, boolean rollback) {
+    if (DEBUG) System.out.println("~~~/~~~ Inside new generateNode()");
+      
     GAHash map = GAHash.getInstance();
     
-    System.out.println("\t\t\tInside generateNode()");
+    // Coping population into new one.
+    if (DEBUG) System.out.println("~~~/~~~ Creating pop and coping population from current node at method.");
+    GAPopulation orig = map.getNode(method.getId()).getPopulation();
+    //GAPopulation orig = method.treeNode.getPopulation();
+    if (DEBUG) System.out.println("~~~/~~~ Checking if rollback is needed.");
+    if (rollback) {
+        if (DEBUG) System.out.println("~~~/~~~/~~~ Rollback is needed -> Coping population from the father.");
+        orig = map.getNode(method.getId()).getParent().getPopulation();
+        //orig = method.treeNode.getParent().getPopulation();
+    }
+    GAPopulation clonedPop = new GAPopulation(orig);
+    if (DEBUG) System.out.println("~~~/~~~ Copy population created.");
+      
+    // Selecting two individuals to crossover.
+    if (DEBUG) System.out.println("~~~/~~~ Selecting two individuals from the cloned pop using tournament.");
+    if (DEBUG) System.out.println("~~~/~~~ Selecting one individual from the cloned pop using tournament, the other one is the current DNA.");
+    tournamentResult result = binaryTournament(clonedPop);
+    //GAIndividual firstIndividual = result.getIndividual();
+    GAIndividual firstIndividual = new GAIndividual();
+    firstIndividual.copy(result.getIndividual());
+    int INDEX1 = result.getIndex();
+    if (DEBUG) System.out.println("~~~/~~~ First individual selected from binary tournament. It has the INDEX: " + INDEX1 + " from the cloned pop.");
+    //result = binaryTournament(clonedPop);
+    //GAIndividual secondIndividual = result.getIndividual();
+    GAIndividual secondIndividual = new GAIndividual();
+    secondIndividual.copy(map.getNode(method.getId()).getDNA());
+    //secondIndividual.copy(result.getIndividual());
+    //int INDEX2 = result.getIndex();
+    if (DEBUG) System.out.println("~~~/~~~ Second individual is the current DNA from node. Fitness: " + secondIndividual.getFitness());
+    //if (DEBUG) System.out.println("~~~/~~~ Second individual selected from binary tournament. It has the INDEX: " + INDEX2 + " from the cloned pop.");
     
+    // Crossover
+    if (DEBUG) System.out.println("~~~/~~~ Performing crossover on the two individuals.");
+    crossoverResult bothIndividuals = crossover(clonedPop, firstIndividual, secondIndividual);
+    GAIndividual newIndividual1 = bothIndividuals.getFirstIndividual();
+    GAIndividual newIndividual2 = bothIndividuals.getSecondIndividual();
     
-    System.out.println("\t\t\tCreating pop and coping population from current node at method.");
-    int popSize = method.treeNode.getPopulation().getPopulationSize();
-    //GAPopulation pop = new GAPopulation();
-    GAPopulation orig = method.treeNode.getPopulation();
-    GAPopulation pop = new GAPopulation(orig);  // Creating new pop as copy of the original
-    //pop.setPopulationSize(50);
-    //pop.individuals = new GAIndividual[50];
-    System.out.println("\t\t\tCopy population created.");
+    //newIndividual1.setCompilationRate(0);
+    //newIndividual1.setSpeedUp(0);
     
-    // Population we use at this new node:
-    //System.out.println("\tCoping population: ");
+    if (DEBUG) System.out.println("~~~/~~~ Replacing both the parents with the new individuals generanted from crossover.");
+    clonedPop.replaceIndividual(INDEX1, newIndividual1);
+    int INDEX2 = 0;
+    for (int i = 0; i < map.getNode(method.getId()).getPopulation().getPopulationSize(); i++) {
+        if (map.getNode(method.getId()).getDNA() == map.getNode(method.getId()).getPopulation().individuals[i]) {
+            if (DEBUG) System.out.println("********** The current DNA node is index " + i + " from the node's population.");
+            INDEX2 = i;
+        }
+    }
+    clonedPop.replaceIndividual(INDEX2, newIndividual2);
     
-    //System.out.println("\tTest: " + method.getTreeNode(method.previousOptLevel).getPopulation().individuals);
-    
-    /*GAIndividual orig = method.treeNode.getDNA();
-    for (int i = 0; i < 50; i++) {
-        pop.individuals[i] = new GAIndividual();
-        //pop.individuals[i].initOptOption();
-        pop.individuals[i].initOptOption(optLevel);
-        //cloneOptOptions(method.getTreeNode(method.previousOptLevel).getPopulation().individuals[i], pop.individuals[i]);
-        pop.individuals[i].copy(orig);
-    }*/
-    //System.out.println("\tPopulation copied.");
-
-    // Select two individuals from the cloned pop using tournament.
-    System.out.println("\tSelecting two individuals from the cloned pop using tournament.");
-    //GAIndividual firstIndividual = binaryTournament(pop);
-    //GAIndividual secondIndividual = binaryTournament(pop);
-    tournamentResult result = binaryTournament(pop);
-    GAIndividual firstIndividual = result.getIndividual();
-    int INDEX1 = result.getFirstIndex();
-    System.out.println("\tFirst individual selected from binary tournament. It has the INDEX: " + INDEX1 + " from the cloned pop.");
-
-    result = binaryTournament(pop);
-    GAIndividual secondIndividual = result.getIndividual();
-    int INDEX2 = result.getFirstIndex();
-    System.out.println("\tSecond individual selected from binary tournament. It has the INDEX: " + INDEX2 + " from the cloned pop.");
-
-    // TODO - Perform crossover and mutation.
-    System.out.println("\tPerforming crossover on the two individuals.");
-    GAIndividual newIndividual = crossover(pop, firstIndividual, secondIndividual);
-    System.out.println("\tReplacing one of the parents with the new individual generanted from crossover.");
-    pop.replaceIndividual(INDEX2, newIndividual);
     // Mutating newIndividual (or not, depdends on mutation rate).
-    System.out.println("\tMutating newIndividual (or not, depdends on mutation rate).");
-    mutate(newIndividual, optLevel);
-
-    //tree.getGARoot().setLeftChild(tuple.getNode());
-    System.out.println("\tAdding new node in the tree and Making current method point to new node.");
-    //GATreeNode aux = method.getTreeNode(optLevel);
-
-    GATreeNode auxNew = tree.addChild(newIndividual, pop, method.getTreeNode(optLevel), rollback);
-    method.setTreeNode(optLevel, auxNew);
-    //method.treeNode0 = tree.addChild(newIndividual, pop, aux, rollback); // TODO - Parameters not right. Need yet to generate new individual and pop.
+    if (DEBUG) System.out.println("~~~/~~~ Mutating both newIndividual (or not, depdends on mutation rate).");
+    if (DEBUG) System.out.println("~~~/~~~ *Using the optLevel from the new tree (IF the opt level changed) <- VERIFY");
+    mutate(newIndividual1, optLevel);
+    mutate(newIndividual2, optLevel);
     
-    map.add(methodId, recentSample, method.getTreeNode(optLevel));
-    System.out.println("\tPriting part of the tree: ");
-    tree.print();
+    //if (DEBUG) System.out.println("~~~/~~~ Selecting one individual (based on its fitness) to be the DNA on the new node.");
+    if (DEBUG) System.out.println("~~~/~~~ New DNA of new node is one of the 2 recently created from crossover.");
+    GAIndividual newDNA;
+    int newINDEX;
+    if (newIndividual1.getFitness() > newIndividual2.getFitness()) {
+        if (DEBUG) System.out.println("~~~/~~~ Individual[" + INDEX1 + "] selected (fitness: " + newIndividual1.getFitness() + ").");
+        newDNA = newIndividual1;
+        newINDEX = INDEX1;
+    } else {
+        if (DEBUG) System.out.println("~~~/~~~ Individual[" + INDEX2 + "] selected (fitness: " + newIndividual2.getFitness() + ").");
+        newDNA = newIndividual2;
+        newINDEX = INDEX2;
+    }
+    //tournamentResult newResult = rouletteWheelSelection(clonedPop);
+    //GAIndividual newDNA = newResult.getIndividual();
+    //int newINDEX = newResult.getIndex();
+    
+    // Adding new node to the tree.
+    if (DEBUG) System.out.println("~~~/~~~ Adding new node in the tree and returning it.");
+    //if (DEBUG) System.out.println("~~~/~~~ Getting the first from the two new individuals to set as the node's DNA.");
+    //GATreeNode newNode = tree.addChild(newIndividual1, clonedPop, method.treeNode, rollback);
+    if (DEBUG) System.out.println("~~~/~~~ Individual selected from Wheel: " + newINDEX);
+    GATreeNode newNode = tree.addChild(newDNA, clonedPop, method.treeNode, rollback);
+    if (DEBUG) System.out.println("~~~/~~~ Node added to the tree. Tree level: " + optLevel);
+    if (DEBUG) System.out.println("~~~/~~~ Returning new node.");
+    return newNode;
   }
   
   public void cloneOptOptions(OptOptions[] _opt, GAIndividual DNA, int optLevel) {
@@ -480,6 +674,12 @@ public abstract class RecompilationStrategy {
     _opt[optLevel].OSR_GUARDED_INLINING = DNA.OSR_GUARDED_INLINING;
     _opt[optLevel].OSR_INLINE_POLICY = DNA.OSR_INLINE_POLICY;
     _opt[optLevel].L2M_HANDLER_LIVENESS = DNA.L2M_HANDLER_LIVENESS;
+    _opt[optLevel].CONTROL_TURN_WHILES_INTO_UNTILS = DNA.CONTROL_TURN_WHILES_INTO_UNTILS;
+    _opt[optLevel].LOCAL_EXPRESSION_FOLDING = DNA.LOCAL_EXPRESSION_FOLDING;
+    _opt[optLevel].SSA = DNA.SSA;
+    _opt[optLevel].SSA_EXPRESSION_FOLDING = DNA.SSA_EXPRESSION_FOLDING;
+    _opt[optLevel].SSA_REDUNDANT_BRANCH_ELIMINATION = DNA.SSA_REDUNDANT_BRANCH_ELIMINATION;
+    _opt[optLevel].SSA_LOAD_ELIMINATION = DNA.SSA_LOAD_ELIMINATION;
     
   }
   
@@ -492,37 +692,48 @@ public abstract class RecompilationStrategy {
       
     int coin = rand.nextInt(100);
     if (coin < MUTATION_RATE) {
-        System.out.println("~~~/~~~/~~~ Performing mutation");
+        if (DEBUG) System.out.println("~~~/~~~/~~~ Performing mutation");
         individual.mutateBoolean(optLevel);
     }
   }
   
-  /*public void mutate(GAIndividual individual, int optLevel) {
-    // One parameter from the DNA will be changed per mutate() call.
-    Randomizer randUtil = Randomizer.getInstance();
-    Random rand = randUtil.getRandom();
+  public tournamentResult rouletteWheelSelection(GAPopulation pop) {
+    double [] cumulativeFitness = new double[pop.getPopulationSize()];
+    cumulativeFitness[0] = pop.individuals[0].getFitness();
+    if (DEBUG) System.out.println("Cumulative fitness[0]: " + cumulativeFitness[0]);
     
-    int coin = rand.nextInt(100);
-    if (coin < 10) {
-      // Performing mutation.
-      int INDEX = rand.nextInt(16);
-      System.out.println("\t\tPerforming mutation.\t\tThe option with INDEX: " + INDEX + " was selected.");
-      System.out.println("\t\tPerforming mutation using the new mutateBoolean method.");
-      //individual.mutateBoolean(INDEX, optLevel);
-      individual.mutateBoolean(optLevel);
+    for (int i = 1; i < pop.getPopulationSize(); i++) {
+        double fitness = pop.individuals[i].getFitness();
+        
+        cumulativeFitness[i] = cumulativeFitness[i-1] + fitness;
+        if (DEBUG) System.out.println("Cumulative fitness[" + i + "]: " + cumulativeFitness[i]);
     }
-  }*/
+    
+    Randomizer rand = Randomizer.getInstance();
+    double randomFitness = rand.nextDouble() * cumulativeFitness[cumulativeFitness.length - 1];
+    if (DEBUG) System.out.println("Random fitness generated: " + randomFitness);
+    int INDEX = Arrays.binarySearch(cumulativeFitness, randomFitness);
+    if (INDEX < 0) {
+        INDEX = Math.abs(INDEX + 1);
+    }
+    if (DEBUG) System.out.println("Individual INDEX selected: " + INDEX);
+    
+    return new tournamentResult(pop.individuals[INDEX], INDEX);
+  }
   
   public tournamentResult binaryTournament(GAPopulation pop) {
-    Randomizer randUtil = Randomizer.getInstance();
-    
-    int popSize = pop.getPopulationSize();
-    int INDEX1 = randUtil.nextInt(popSize);
-    GAIndividual firstContender = pop.getIndividual(INDEX1);
-    int INDEX2 = randUtil.nextInt(popSize);
-    GAIndividual secondContender = pop.getIndividual(INDEX2);
-    System.out.println("~~~/~~~/~~~ First contender sample's: " + firstContender.sample + ", Second contender sample's: " + secondContender.sample);
-    if (firstContender.sample < secondContender.sample) {
+    tournamentResult result;
+    result = rouletteWheelSelection(pop);
+    GAIndividual firstContender = result.getIndividual();
+    int INDEX1 = result.getIndex();
+    //firstContender = pop.getIndividual(INDEX1);
+    //int INDEX2 = randUtil.nextInt(popSize);
+    result = rouletteWheelSelection(pop);
+    GAIndividual secondContender = result.getIndividual();
+    int INDEX2 = result.getIndex();
+    //secondContender = pop.getIndividual(INDEX2);
+    if (DEBUG) System.out.println("~~~/~~~/~~~ First contender fitness's: " + firstContender.getFitness() + ", Second contender fitness's: " + secondContender.getFitness());
+    if (firstContender.getFitness() < secondContender.getFitness()) {
       return new tournamentResult(firstContender, INDEX1);
     } else {
       return new tournamentResult(secondContender, INDEX2);
@@ -544,7 +755,7 @@ public abstract class RecompilationStrategy {
         return individual;
     }
 
-    public int getFirstIndex() {
+    public int getIndex() {
         return first;
     }
     
@@ -553,174 +764,356 @@ public abstract class RecompilationStrategy {
     }*/
   }
   
-  public GAIndividual crossover(GAPopulation pop, GAIndividual firstIndividual, GAIndividual secondIndividual) {
-    Random rand = pop.getRandom();
-    Randomizer randUtil = Randomizer.getInstance();
-    rand = randUtil.getRandom();
+  public crossoverResult crossover(GAPopulation pop, GAIndividual firstIndividual, GAIndividual secondIndividual) {
+    //Random rand = pop.getRandom();
+    Randomizer rand = Randomizer.getInstance();
+    //rand = randUtil.getRandom();
     
-    GAIndividual newIndividual = new GAIndividual();
-    newIndividual.initOptOption();
-    //int optLevel = getMaxOptLevel();
-    //OptOptions[] newSolOpt = newIndividual.getGAOptions();
+    GAIndividual newIndividual1 = new GAIndividual();
+    newIndividual1.initOptOption();
+    newIndividual1.setSpeedUp(firstIndividual.getSpeedUp());
+    newIndividual1.setCompilationRate(firstIndividual.getCompilationRate());
+    newIndividual1.setFitness(firstIndividual.getFitness());
+    GAIndividual newIndividual2 = new GAIndividual();
+    newIndividual2.initOptOption();
+    newIndividual2.setSpeedUp(secondIndividual.getSpeedUp());
+    newIndividual2.setCompilationRate(secondIndividual.getCompilationRate());
+    newIndividual2.setFitness(secondIndividual.getFitness());
     
     int coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.FIELD_ANALYSIS = firstIndividual.FIELD_ANALYSIS;
+      newIndividual1.FIELD_ANALYSIS = firstIndividual.FIELD_ANALYSIS;
+      newIndividual2.FIELD_ANALYSIS = secondIndividual.FIELD_ANALYSIS;
     } else {
-      newIndividual.FIELD_ANALYSIS = secondIndividual.FIELD_ANALYSIS;
+      newIndividual1.FIELD_ANALYSIS = secondIndividual.FIELD_ANALYSIS;
+      newIndividual2.FIELD_ANALYSIS = firstIndividual.FIELD_ANALYSIS;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.INLINE = firstIndividual.INLINE;
+      newIndividual1.INLINE = firstIndividual.INLINE;
+      newIndividual2.INLINE = secondIndividual.INLINE;
     } else {
-      newIndividual.INLINE = secondIndividual.INLINE;
+      newIndividual1.INLINE = secondIndividual.INLINE;
+      newIndividual2.INLINE = firstIndividual.INLINE;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.INLINE_GUARDED = firstIndividual.INLINE_GUARDED;
+      newIndividual1.INLINE_GUARDED = firstIndividual.INLINE_GUARDED;
+      newIndividual2.INLINE_GUARDED = secondIndividual.INLINE_GUARDED;
     } else {
-      newIndividual.INLINE_GUARDED = secondIndividual.INLINE_GUARDED;
+      newIndividual1.INLINE_GUARDED = secondIndividual.INLINE_GUARDED;
+      newIndividual2.INLINE_GUARDED = firstIndividual.INLINE_GUARDED;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.INLINE_GUARDED_INTERFACES = firstIndividual.INLINE_GUARDED_INTERFACES;
+      newIndividual1.INLINE_GUARDED_INTERFACES = firstIndividual.INLINE_GUARDED_INTERFACES;
+      newIndividual2.INLINE_GUARDED_INTERFACES = secondIndividual.INLINE_GUARDED_INTERFACES;
     } else {
-      newIndividual.INLINE_GUARDED_INTERFACES = secondIndividual.INLINE_GUARDED_INTERFACES;
+      newIndividual1.INLINE_GUARDED_INTERFACES = secondIndividual.INLINE_GUARDED_INTERFACES;
+      newIndividual2.INLINE_GUARDED_INTERFACES = firstIndividual.INLINE_GUARDED_INTERFACES;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.INLINE_PREEX = firstIndividual.INLINE_PREEX;
+      newIndividual1.INLINE_PREEX = firstIndividual.INLINE_PREEX;
+      newIndividual2.INLINE_PREEX = secondIndividual.INLINE_PREEX;
     } else {
-      newIndividual.INLINE_PREEX = secondIndividual.INLINE_PREEX;
+      newIndividual1.INLINE_PREEX = secondIndividual.INLINE_PREEX;
+      newIndividual2.INLINE_PREEX = firstIndividual.INLINE_PREEX;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.LOCAL_CONSTANT_PROP = firstIndividual.LOCAL_CONSTANT_PROP;
+      newIndividual1.LOCAL_CONSTANT_PROP = firstIndividual.LOCAL_CONSTANT_PROP;
+      newIndividual2.LOCAL_CONSTANT_PROP = secondIndividual.LOCAL_CONSTANT_PROP;
     } else {
-      newIndividual.LOCAL_CONSTANT_PROP = secondIndividual.LOCAL_CONSTANT_PROP;
+      newIndividual1.LOCAL_CONSTANT_PROP = secondIndividual.LOCAL_CONSTANT_PROP;
+      newIndividual2.LOCAL_CONSTANT_PROP = firstIndividual.LOCAL_CONSTANT_PROP;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.LOCAL_COPY_PROP = firstIndividual.LOCAL_COPY_PROP;
+      newIndividual1.LOCAL_COPY_PROP = firstIndividual.LOCAL_COPY_PROP;
+      newIndividual2.LOCAL_COPY_PROP = secondIndividual.LOCAL_COPY_PROP;
     } else {
-      newIndividual.LOCAL_COPY_PROP = secondIndividual.LOCAL_COPY_PROP;
+      newIndividual1.LOCAL_COPY_PROP = secondIndividual.LOCAL_COPY_PROP;
+      newIndividual2.LOCAL_COPY_PROP = firstIndividual.LOCAL_COPY_PROP;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.LOCAL_CSE = firstIndividual.LOCAL_CSE;
+      newIndividual1.LOCAL_CSE = firstIndividual.LOCAL_CSE;
+      newIndividual2.LOCAL_CSE = secondIndividual.LOCAL_CSE;
     } else {
-      newIndividual.LOCAL_CSE = secondIndividual.LOCAL_CSE;
+      newIndividual1.LOCAL_CSE = secondIndividual.LOCAL_CSE;
+      newIndividual2.LOCAL_CSE = firstIndividual.LOCAL_CSE;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.REORDER_CODE = firstIndividual.REORDER_CODE;
+      newIndividual1.REORDER_CODE = firstIndividual.REORDER_CODE;
+      newIndividual2.REORDER_CODE = secondIndividual.REORDER_CODE;
     } else {
-      newIndividual.REORDER_CODE = secondIndividual.REORDER_CODE;
+      newIndividual1.REORDER_CODE = secondIndividual.REORDER_CODE;
+      newIndividual2.REORDER_CODE = firstIndividual.REORDER_CODE;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.H2L_INLINE_NEW = firstIndividual.H2L_INLINE_NEW;
+      newIndividual1.H2L_INLINE_NEW = firstIndividual.H2L_INLINE_NEW;
+      newIndividual2.H2L_INLINE_NEW = secondIndividual.H2L_INLINE_NEW;
     } else {
-      newIndividual.H2L_INLINE_NEW = secondIndividual.H2L_INLINE_NEW;
+      newIndividual1.H2L_INLINE_NEW = secondIndividual.H2L_INLINE_NEW;
+      newIndividual2.H2L_INLINE_NEW = firstIndividual.H2L_INLINE_NEW;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.REGALLOC_COALESCE_MOVES = firstIndividual.REGALLOC_COALESCE_MOVES;
+      newIndividual1.REGALLOC_COALESCE_MOVES = firstIndividual.REGALLOC_COALESCE_MOVES;
+      newIndividual2.REGALLOC_COALESCE_MOVES = secondIndividual.REGALLOC_COALESCE_MOVES;
     } else {
-      newIndividual.REGALLOC_COALESCE_MOVES = secondIndividual.REGALLOC_COALESCE_MOVES;
+      newIndividual1.REGALLOC_COALESCE_MOVES = secondIndividual.REGALLOC_COALESCE_MOVES;
+      newIndividual2.REGALLOC_COALESCE_MOVES = firstIndividual.REGALLOC_COALESCE_MOVES;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.REGALLOC_COALESCE_SPILLS = firstIndividual.REGALLOC_COALESCE_SPILLS;
+      newIndividual1.REGALLOC_COALESCE_SPILLS = firstIndividual.REGALLOC_COALESCE_SPILLS;
+      newIndividual2.REGALLOC_COALESCE_SPILLS = secondIndividual.REGALLOC_COALESCE_SPILLS;
     } else {
-      newIndividual.REGALLOC_COALESCE_SPILLS = secondIndividual.REGALLOC_COALESCE_SPILLS;
+      newIndividual1.REGALLOC_COALESCE_SPILLS = secondIndividual.REGALLOC_COALESCE_SPILLS;
+      newIndividual2.REGALLOC_COALESCE_SPILLS = firstIndividual.REGALLOC_COALESCE_SPILLS;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.CONTROL_STATIC_SPLITTING = firstIndividual.CONTROL_STATIC_SPLITTING;
+      newIndividual1.CONTROL_STATIC_SPLITTING = firstIndividual.CONTROL_STATIC_SPLITTING;
+      newIndividual2.CONTROL_STATIC_SPLITTING = secondIndividual.CONTROL_STATIC_SPLITTING;
     } else {
-      newIndividual.CONTROL_STATIC_SPLITTING = secondIndividual.CONTROL_STATIC_SPLITTING;
+      newIndividual1.CONTROL_STATIC_SPLITTING = secondIndividual.CONTROL_STATIC_SPLITTING;
+      newIndividual2.CONTROL_STATIC_SPLITTING = firstIndividual.CONTROL_STATIC_SPLITTING;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES = firstIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES;
+      newIndividual1.ESCAPE_SCALAR_REPLACE_AGGREGATES = firstIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES;
+      newIndividual2.ESCAPE_SCALAR_REPLACE_AGGREGATES = secondIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES;
     } else {
-      newIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES = secondIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES;
+      newIndividual1.ESCAPE_SCALAR_REPLACE_AGGREGATES = secondIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES;
+      newIndividual2.ESCAPE_SCALAR_REPLACE_AGGREGATES = firstIndividual.ESCAPE_SCALAR_REPLACE_AGGREGATES;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.ESCAPE_MONITOR_REMOVAL = firstIndividual.ESCAPE_MONITOR_REMOVAL;
+      newIndividual1.ESCAPE_MONITOR_REMOVAL = firstIndividual.ESCAPE_MONITOR_REMOVAL;
+      newIndividual2.ESCAPE_MONITOR_REMOVAL = secondIndividual.ESCAPE_MONITOR_REMOVAL;
     } else {
-      newIndividual.ESCAPE_MONITOR_REMOVAL = secondIndividual.ESCAPE_MONITOR_REMOVAL;
+      newIndividual1.ESCAPE_MONITOR_REMOVAL = secondIndividual.ESCAPE_MONITOR_REMOVAL;
+      newIndividual2.ESCAPE_MONITOR_REMOVAL = firstIndividual.ESCAPE_MONITOR_REMOVAL;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.REORDER_CODE_PH = firstIndividual.REORDER_CODE_PH;
+      newIndividual1.REORDER_CODE_PH = firstIndividual.REORDER_CODE_PH;
+      newIndividual2.REORDER_CODE_PH = secondIndividual.REORDER_CODE_PH;
     } else {
-      newIndividual.REORDER_CODE_PH = secondIndividual.REORDER_CODE_PH;
+      newIndividual1.REORDER_CODE_PH = secondIndividual.REORDER_CODE_PH;
+      newIndividual2.REORDER_CODE_PH = firstIndividual.REORDER_CODE_PH;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.H2L_INLINE_WRITE_BARRIER = firstIndividual.H2L_INLINE_WRITE_BARRIER;
+      newIndividual1.H2L_INLINE_WRITE_BARRIER = firstIndividual.H2L_INLINE_WRITE_BARRIER;
+      newIndividual2.H2L_INLINE_WRITE_BARRIER = secondIndividual.H2L_INLINE_WRITE_BARRIER;
     } else {
-      newIndividual.H2L_INLINE_WRITE_BARRIER = secondIndividual.H2L_INLINE_WRITE_BARRIER;
+      newIndividual1.H2L_INLINE_WRITE_BARRIER = secondIndividual.H2L_INLINE_WRITE_BARRIER;
+      newIndividual2.H2L_INLINE_WRITE_BARRIER = firstIndividual.H2L_INLINE_WRITE_BARRIER;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER = firstIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
+      newIndividual1.H2L_INLINE_PRIMITIVE_WRITE_BARRIER = firstIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
+      newIndividual2.H2L_INLINE_PRIMITIVE_WRITE_BARRIER = secondIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
     } else {
-      newIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER = secondIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
+      newIndividual1.H2L_INLINE_PRIMITIVE_WRITE_BARRIER = secondIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
+      newIndividual2.H2L_INLINE_PRIMITIVE_WRITE_BARRIER = firstIndividual.H2L_INLINE_PRIMITIVE_WRITE_BARRIER;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.OSR_GUARDED_INLINING = firstIndividual.OSR_GUARDED_INLINING;
+      newIndividual1.OSR_GUARDED_INLINING = firstIndividual.OSR_GUARDED_INLINING;
+      newIndividual2.OSR_GUARDED_INLINING = secondIndividual.OSR_GUARDED_INLINING;
     } else {
-      newIndividual.OSR_GUARDED_INLINING = secondIndividual.OSR_GUARDED_INLINING;
+      newIndividual1.OSR_GUARDED_INLINING = secondIndividual.OSR_GUARDED_INLINING;
+      newIndividual2.OSR_GUARDED_INLINING = firstIndividual.OSR_GUARDED_INLINING;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.OSR_INLINE_POLICY = firstIndividual.OSR_INLINE_POLICY;
+      newIndividual1.OSR_INLINE_POLICY = firstIndividual.OSR_INLINE_POLICY;
+      newIndividual2.OSR_INLINE_POLICY = secondIndividual.OSR_INLINE_POLICY;
     } else {
-      newIndividual.OSR_INLINE_POLICY = secondIndividual.OSR_INLINE_POLICY;
+      newIndividual1.OSR_INLINE_POLICY = secondIndividual.OSR_INLINE_POLICY;
+      newIndividual2.OSR_INLINE_POLICY = firstIndividual.OSR_INLINE_POLICY;
     }
     coin = rand.nextInt(100);
     if (coin < 50) {
-      newIndividual.L2M_HANDLER_LIVENESS = firstIndividual.L2M_HANDLER_LIVENESS;
+      newIndividual1.L2M_HANDLER_LIVENESS = firstIndividual.L2M_HANDLER_LIVENESS;
+      newIndividual2.L2M_HANDLER_LIVENESS = secondIndividual.L2M_HANDLER_LIVENESS;
     } else {
-      newIndividual.L2M_HANDLER_LIVENESS = secondIndividual.L2M_HANDLER_LIVENESS;
+      newIndividual1.L2M_HANDLER_LIVENESS = secondIndividual.L2M_HANDLER_LIVENESS;
+      newIndividual2.L2M_HANDLER_LIVENESS = firstIndividual.L2M_HANDLER_LIVENESS;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual1.CONTROL_TURN_WHILES_INTO_UNTILS = firstIndividual.CONTROL_TURN_WHILES_INTO_UNTILS;
+      newIndividual2.CONTROL_TURN_WHILES_INTO_UNTILS = secondIndividual.CONTROL_TURN_WHILES_INTO_UNTILS;
+    } else {
+      newIndividual1.CONTROL_TURN_WHILES_INTO_UNTILS = secondIndividual.CONTROL_TURN_WHILES_INTO_UNTILS;
+      newIndividual2.CONTROL_TURN_WHILES_INTO_UNTILS = firstIndividual.CONTROL_TURN_WHILES_INTO_UNTILS;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual1.LOCAL_EXPRESSION_FOLDING = firstIndividual.LOCAL_EXPRESSION_FOLDING;
+      newIndividual2.LOCAL_EXPRESSION_FOLDING = secondIndividual.LOCAL_EXPRESSION_FOLDING;
+    } else {
+      newIndividual1.LOCAL_EXPRESSION_FOLDING = secondIndividual.LOCAL_EXPRESSION_FOLDING;
+      newIndividual2.LOCAL_EXPRESSION_FOLDING = firstIndividual.LOCAL_EXPRESSION_FOLDING;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual1.SSA = firstIndividual.SSA;
+      newIndividual2.SSA = secondIndividual.SSA;
+    } else {
+      newIndividual1.SSA = secondIndividual.SSA;
+      newIndividual2.SSA = firstIndividual.SSA;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual1.SSA_EXPRESSION_FOLDING = firstIndividual.SSA_EXPRESSION_FOLDING;
+      newIndividual2.SSA_EXPRESSION_FOLDING = secondIndividual.SSA_EXPRESSION_FOLDING;
+    } else {
+      newIndividual1.SSA_EXPRESSION_FOLDING = secondIndividual.SSA_EXPRESSION_FOLDING;
+      newIndividual2.SSA_EXPRESSION_FOLDING = firstIndividual.SSA_EXPRESSION_FOLDING;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual1.SSA_REDUNDANT_BRANCH_ELIMINATION = firstIndividual.SSA_REDUNDANT_BRANCH_ELIMINATION;
+      newIndividual2.SSA_REDUNDANT_BRANCH_ELIMINATION = secondIndividual.SSA_REDUNDANT_BRANCH_ELIMINATION;
+    } else {
+      newIndividual1.SSA_REDUNDANT_BRANCH_ELIMINATION = secondIndividual.SSA_REDUNDANT_BRANCH_ELIMINATION;
+      newIndividual2.SSA_REDUNDANT_BRANCH_ELIMINATION = firstIndividual.SSA_REDUNDANT_BRANCH_ELIMINATION;
+    }
+    coin = rand.nextInt(100);
+    if (coin < 50) {
+      newIndividual1.SSA_LOAD_ELIMINATION = firstIndividual.SSA_LOAD_ELIMINATION;
+      newIndividual2.SSA_LOAD_ELIMINATION = secondIndividual.SSA_LOAD_ELIMINATION;
+    } else {
+      newIndividual1.SSA_LOAD_ELIMINATION = secondIndividual.SSA_LOAD_ELIMINATION;
+      newIndividual2.SSA_LOAD_ELIMINATION = firstIndividual.SSA_LOAD_ELIMINATION;
     }
     
-    return newIndividual;
+    //return newIndividual1;
+    return new crossoverResult(newIndividual1, newIndividual2);
   }
   
-  //protected Random rand = new Random();
+  public final class crossoverResult {
+    private final GAIndividual first;
+    private final GAIndividual second;
+
+    public crossoverResult(GAIndividual firstIndividual, GAIndividual secondIndividual) {
+        this.first = firstIndividual;
+        this.second = secondIndividual;
+    }
+
+    public GAIndividual getFirstIndividual() {
+        return first;
+    }
+
+    public GAIndividual getSecondIndividual() {
+        return second;
+    }
+  }
   
-  /*public int getRandomOpt() {
-    //rand = new Random();
-    // Only 16 boolean Opt selected so far.
-    return rand.nextInt(16);
-  }*/
-  
-  /*public void GAcreatePopulation(int populationSize) {
-    System.out.println("Inside GAcreatePopulation");
-    GAIndividual[] individuals;
-    individuals = new GAIndividual[populationSize];
+  public double [][] distanceMatrix(GAPopulation pop) {
+    GAIndividual individualI, individualJ;
+      
+    // The matrix of distances
+    double [][] distance = new double [pop.getPopulationSize()][pop.getPopulationSize()];
     
-    OptOptions[] GAOptions = _options;
-    
-    for (int i = 0; i < POPULATION_SIZE; i++) {
-      int INDEX = getRandomOpt();
-      //System.out.println("TESTE: " + INDEX);
-      System.out.println("Individuals[" + i + "]. <------------");
-      individuals[i] = new GAIndividual();
-      individuals[i].createIndividual(GAOptions, INDEX);
+    // Calculating the distances
+    for (int i = 0; i < pop.getPopulationSize(); i++) {
+        distance[i][i] = 0;
+        individualI = pop.individuals[i];
+        for (int j = i + 1; j < pop.getPopulationSize(); j++) {
+            individualJ = pop.individuals[j];
+            distance[i][j] = distanceBetweenIndividuals(individualI, individualJ);
+            distance[j][i] = distance[i][j];
+            if (DEBUG) System.out.println("Distance between individual[" + i + "] and individual[" + j + "]: " + distance[i][j]);
+        }
     }
     
-    int maxOptLevel = getMaxOptLevel();
-    for (int i = 0; i <= maxOptLevel; i++) {
-      //System.out.println("GAOptions: " + GAOptions[i]);
+    return distance;
+  }
+  
+  public double distanceBetweenIndividuals(GAIndividual individualI, GAIndividual individualJ) {
+    double diff;
+    double distance = 0;
+      
+    diff = individualI.getSpeedUp() - individualJ.getSpeedUp();
+    distance += Math.pow(diff, 2);
+    
+    diff = individualI.getCompilationRate() - individualJ.getCompilationRate();
+    distance += Math.pow(diff, 2);
+    
+    if (DEBUG) System.out.println("Distance between individualI and individualJ: " + Math.sqrt(distance));
+    
+    return Math.sqrt(distance);
+  }
+  
+  public void settingFitnessWithDistance(double[][] distance, double[] rawFitness ,GAPopulation pop) {
+    int k = 1;
+    double kDistance;
+    for (int i = 0; i < distance.length; i++) {
+        Arrays.sort(distance[i]);
+        kDistance = 1.0 / (distance[i][k] + 2.0); // Calcule de D(i) distance
+        double fit = rawFitness[i] + kDistance;
+        if (DEBUG) System.out.println("Individual[" + i + "]'s kDistance: " + kDistance + ". Raw fitness: " + rawFitness[i] + ". Final fitness: " + fit);
+        pop.individuals[i].setFitness(rawFitness[i] + kDistance);
     }
-  }*/
+    
+  }
+  
+  public int compareDominance(GAIndividual firstIndividual, GAIndividual secondIndividual) {
+    int result;
+    if (firstIndividual.getCompilationRate() < secondIndividual.getCompilationRate() &&
+            firstIndividual.getSpeedUp() > secondIndividual.getSpeedUp()) {
+        if (DEBUG) System.out.println("First individual dominates second individual.");
+          result = -1;
+    } else if (firstIndividual.getCompilationRate() > secondIndividual.getCompilationRate() &&
+            firstIndividual.getSpeedUp() < secondIndividual.getSpeedUp()) {
+        if (DEBUG) System.out.println("First individual dominates second individual.");
+        result = 1;
+    } else
+        result = 0;
+    return result;
+  }
+  
+  public double[] calculateStrength(GAPopulation pop) {
+    double [] strength    = new double[pop.getPopulationSize()];
+      
+    for (int i = 0; i < pop.getPopulationSize(); i++) {
+        for (int j = 0; j < pop.getPopulationSize(); j++) {
+            if (compareDominance(pop.individuals[i], pop.individuals[j]) == -1 ) {
+                // Individual i dominates individual j
+                if (DEBUG) System.out.println("Individual[" + i + "] dominates individual[" + j + "].");
+                strength[i] += 1;
+            }
+        }
+    }
+    
+    return strength;
+  }
+  
+  public double[] calculateRawFitness(GAPopulation pop, double[] strength) {
+    double [] rawFitness = new double[pop.getPopulationSize()];
+      
+    for (int i = 0; i < pop.getPopulationSize(); i++) {
+        for (int j = 0; j < pop.getPopulationSize(); j++) {
+            if (compareDominance(pop.individuals[i], pop.individuals[j]) == 1 ) {
+                // Individual j dominates i -> Using j's strength to measure the rawFitness of i
+                if (DEBUG) System.out.println("Individual[" + j + "] dominates individual[" + i + "]. Using " + j + "'s strength to measure the rawFitness of " + i + ".");
+                rawFitness[i] += strength[j];
+            }
+        }
+    }
+    
+    return rawFitness;
+  }
   
   /**
    * Constructs a compilation plan that will compile the given method

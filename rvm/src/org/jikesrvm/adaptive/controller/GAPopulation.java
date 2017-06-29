@@ -22,9 +22,9 @@ public class GAPopulation implements Cloneable {
     
     public GAPopulation() {}
     
-    public GAPopulation(int popSize, int optLevel) {
+    public GAPopulation(int popSize, int optLevel, boolean root) {
       this.popSize = popSize;
-      this.initPopulation(optLevel);
+      this.initPopulation(optLevel, root);
     }
     
     public GAPopulation(GAPopulation orig) {
@@ -87,8 +87,12 @@ public class GAPopulation implements Cloneable {
       return individuals[INDEX];
     }
     
+    public GAIndividual getRootIndividual() {
+      return individuals[0];
+    }
+    
     public void replaceIndividual(int INDEX, GAIndividual newIndividual) {
-      individuals[INDEX] = newIndividual;
+      this.individuals[INDEX] = newIndividual;
     }
     
     public void initPopulation() {
@@ -107,14 +111,23 @@ public class GAPopulation implements Cloneable {
       }
     }
     
-    public void initPopulation(int optLevel) {
+    public void initPopulation(int optLevel, boolean root) {
       //System.out.println("Inside initPopulation");
       individuals = new GAIndividual[popSize];  
     
-      for (int i = 0; i < popSize; i++) {
+      int i = 0;
+      if (root) {
+          individuals[i] = new GAIndividual();
+          individuals[i].createRootIndividual(optLevel);
+          individuals[i].setFitness(1);
+          i = 1;
+      }      
+      
+      for (; i < popSize; i++) {
         individuals[i] = new GAIndividual();
         individuals[i].createIndividual(optLevel);
         individuals[i].setProbability(popSize);
+        individuals[i].setFitness(1);
       }
     }
     
